@@ -8,13 +8,17 @@ through DVSwitch Server. One AllStar node, several DMR networks, talkgroup routi
 ```
 app_rpt (ASL3 / Asterisk)
   -> Analog_Bridge   (PCM <-> AMBE voice frames, via chan_usrp UDP)
-  -> MMDVM_Bridge    (AMBE <-> MMDVM, its DMR side points at local DMRGateway)
+  -> MMDVM_Bridge    (AMBE <-> DMR frames, its DMR side points at local DMRGateway)
   -> DMRGateway      (routes by talkgroup rewrite rules to N upstream DMR networks)
-  -> BrandMeister, TGIF, ...
+  -> BrandMeister, TGIF, KS-DMR, ...
 ```
 
 DMRGateway supports up to **5 upstream networks** (+ XLX). Each network stanza needs its
 own rewrite rules — a stanza with no TGRewrite rules passes nothing.
+
+> **DMRGateway is not part of DVSwitch.** It isn't in the DVSwitch apt repo and the
+> `dvs` menu doesn't configure it. Build it from source with
+> `scripts/build-dmrgateway.sh` (github.com/g4klx/DMRGateway).
 
 **Dialing convention (example):** dial TGs normally for BrandMeister (network 1);
 prefix with `4` (e.g. `4000777`) to reach TGIF TG 777 (network 2). Prefixes are yours to choose.
@@ -34,12 +38,23 @@ prefix with `4` (e.g. `4000777`) to reach TGIF TG 777 (network 2). Prefixes are 
 
 ## Files
 
-- `templates/DMRGateway.ini` — the multi-mode heart: 2+ `[DMR Network N]` stanzas + rewrite rules
+- `templates/DMRGateway.ini` — the multi-mode heart: `[General]` RptAddress/RptPort
+  for the localhost leg + 2+ `[DMR Network N]` upstream stanzas with rewrite rules.
+  **No unnumbered `[DMR Network]` section** — current DMRGateway would parse it as
+  an upstream network, not the localhost leg.
 - `templates/MMDVM_Bridge.ini` — DMR side pointed at the local DMRGateway
-- `templates/Analog_Bridge.ini` — links ASL (USRP) to MMDVM_Bridge (AMBE audio)
+  (`Address=127.0.0.1, Port=62031, Local=62032`; verified against DMRGateway source)
+- `templates/Analog_Bridge.ini` — links ASL (USRP) to MMDVM_Bridge (AMBE audio);
+  key names verified against the DVSwitch-distributed ini
+- `scripts/build-dmrgateway.sh` — builds DMRGateway from source (not in DVSwitch repo)
 - `scripts/install-dvswitch-bookworm.sh` — DVSwitch apt install for Debian 12 / ASL3
 - `scripts/generate-configs.sh` — fills templates from `vars.sh` into `output/`
+- `scripts/validate-dmr-configs.sh` — sanity-checks a config set before it goes
+  on a node (port pairing, ESSIDs, rewrite rules, password markers, AMBE pairing)
 - `vars.example.sh` — copy to `vars.sh` and fill in (gitignored)
+- `nodes/kf0riz/` — finished configs for Sam's node (KF0RIZ / 3209686):
+  BrandMeister + TGIF + KS-DMR via DMRGateway, passwords left as `__SET_...__`
+  markers; includes `deploy-on-node.sh`, `verify-on-node.sh`, `dmrgateway.service`
 
 ## Typical install paths (DVSwitch Server on Debian 12)
 
@@ -53,9 +68,9 @@ prefix with `4` (e.g. `4000777`) to reach TGIF TG 777 (network 2). Prefixes are 
 | Ports | Scope | Purpose |
 |---|---|---|
 | 62031 | outbound to masters | DMR master links (BM hotspots; repeaters use 62030) |
-| 62032 / 62033 | localhost | MMDVM_Bridge ↔ DMRGateway (verify pairing — see template comments) |
-| 31100 / 31103 | localhost | Analog_Bridge ↔ MMDVM_Bridge (AMBE audio) |
-| 32001 / 34001 | localhost | ASL chan_usrp ↔ Analog_Bridge |
+| 62031 / 62032 | localhost | MMDVM_Bridge ↔ DMRGateway: DMRGateway binds 62031 (`[General]` LocalPort) and only accepts frames from 62032 (`[General]` RptPort); MMDVM_Bridge uses `Port=62031, Local=62032` |
+| 31100 / 31103 | localhost | Analog_Bridge ↔ MMDVM_Bridge (AMBE/TLV audio, crossed: AB txPort 31103 → MM rxPort 31103, MM txPort 31100 → AB rxPort 31100) |
+| 32001 / 34001 | localhost | ASL chan_usrp ↔ Analog_Bridge (common convention; keep your working values) |
 
 Open outbound 62031; don't firewall the localhost inter-process ports.
 
