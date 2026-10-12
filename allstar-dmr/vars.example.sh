@@ -8,6 +8,9 @@ CALLSIGN="YOURCALL"
 # Base DMR ID, e.g. 1234567
 DMR_ID="1234567"
 
+# Location string for the [Info] section, e.g. "Shawnee, KS"
+LOCATION="Your town, ST"
+
 # --- BrandMeister (DMR Network 1) ---
 # Nearest master, e.g. 3104.master.brandmeister.network
 BM_MASTER="3104.master.brandmeister.network"
