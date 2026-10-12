@@ -9,10 +9,13 @@ San Jose, closest US master to Arizona) and TGIF.
 |---|---|
 | Plain TG, e.g. `91`, `3104`, `3120` | BrandMeister (TS1/TS2 as dialed) |
 | `4` + TG, e.g. `4000777` | TGIF TG 777 |
+| `73120` | KS-DMR Kansas Statewide (TS2, native Kansas network) |
 
-Kansas Statewide is TG **3120** — reachable on BrandMeister, no extra network needed.
-(A standalone KS-DMR stanza is included commented-out in `DMRGateway.ini` with an
-explanation, in case you ever want it.)
+Three DMR networks are configured: BrandMeister, TGIF, and KS-DMR (the standalone
+Kansas HBlink network — you're a Kansas ham, so its public hotspot entry
+`vesta.k0usy.org:62071` is fair use for you). Note the public KS-DMR entry only
+carries TS2/TG 3120, which is why it's a single dialing mapping rather than a full
+prefix range. BrandMeister's own TG 3120 remains available too.
 
 ## Install
 
@@ -32,7 +35,11 @@ never commit real passwords.
    - `__SET_TGIF_PASSWORD__` → your TGIF hotspot password (tgif.network dashboard).
 5. Double-check the **port pairing** between `MMDVM_Bridge.ini [DMR Network] Port=`
    and `DMRGateway.ini [DMR Network] Local=`, and the `[USRP]` directionality,
-   against the `dvs`-generated files from step 1.
+   against the `dvs`-generated files from step 1. You can also run the repo's
+   consistency checker against these files (or your node's copies):
+   `bash ../scripts/validate-dmr-configs.sh [config-dir]`
+   It verifies the crossed port pairing, ESSID uniqueness, rewrite rules,
+   and that no password markers or caller-ID rewrites slipped in.
 6. Restart in order: DMRGateway → MMDVM_Bridge → Analog_Bridge
    (Asterisk stays running).
 7. Key a talkgroup: `sudo /opt/MMDVM_Bridge/dvswitch.sh tune 91`
