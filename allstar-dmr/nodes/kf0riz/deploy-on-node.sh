@@ -73,10 +73,20 @@ done
 # NOTE: /opt/MMDVM_Bridge/DVSwitch.ini is intentionally left alone -- the stock
 # [DMR] partner ports (txPort=31100/rxPort=31103) are already correct.
 
-# Install the systemd unit for DMRGateway if it is not already there.
-if [[ ! -f /etc/systemd/system/dmrgateway.service ]]; then
+# Install the systemd unit for DMRGateway. Overwrite if it exists but points
+# to the wrong config path (e.g. /etc/dmrgateway vs /opt/DMRGateway).
+UNIT_SRC="$SRC_DIR/dmrgateway.service"
+UNIT_DST="/etc/systemd/system/dmrgateway.service"
+NEED_UNIT=0
+if [[ ! -f "$UNIT_DST" ]]; then
+  NEED_UNIT=1
+elif ! grep -q "ExecStart=/usr/local/bin/DMRGateway /opt/DMRGateway/DMRGateway.ini" "$UNIT_DST"; then
+  info "existing dmrgateway.service points to wrong config path -- replacing"
+  NEED_UNIT=1
+fi
+if [[ $NEED_UNIT -eq 1 ]]; then
   info "installing dmrgateway.service systemd unit"
-  cp -p "$SRC_DIR/dmrgateway.service" /etc/systemd/system/dmrgateway.service
+  cp -p "$UNIT_SRC" "$UNIT_DST"
   systemctl daemon-reload
   systemctl enable dmrgateway.service
 else
