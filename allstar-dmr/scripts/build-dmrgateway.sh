@@ -13,14 +13,20 @@ set -euo pipefail
 
 echo "== installing build dependencies"
 apt update
-apt install -y git build-essential libmosquitto-dev nlohmann-json3-dev
+apt install -y git build-essential patch libmosquitto-dev nlohmann-json3-dev
 
 SRC=/opt/DMRGateway-src
-# Use a known-stable commit (20240831, GitID #29397cf) -- the bleeding-edge
-# master (20260713) has an MMDVM protocol incompatibility
-# ("Unknown packet from the MMDVM") with DVSwitch MMDVM_Bridge.
-# Version 20240831 is confirmed working (see GitHub issue reports).
+# Use a known-stable commit (20240831, GitID #29397cf).
+# NOTE (Oct 13 2026): vanilla DMRGateway at ANY commit cannot talk to DVSwitch
+# MMDVM_Bridge -- MMDVM_Bridge always logs in with the direct-mode "RPTL"
+# handshake (it has no MMDVMHost-style Type=Gateway option), while DMRGateway's
+# local side only accepts the "DMRC" config packet. Result: "Unknown packet
+# from the MMDVM" forever and the gateway never starts its DMR networks
+# (it waits for the local login first). See scripts/dmrgateway-rptl-login.patch,
+# applied below, which emulates the network side of the RPTL handshake.
+# (g4klx/DMRGateway issue #107 is the same failure with MMDVMHost Type=Direct.)
 STABLE_COMMIT="29397cf"
+PATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dmrgateway-rptl-login.patch"
 if [[ -d "$SRC/.git" ]]; then
   echo "== updating existing source in $SRC"
   git -C "$SRC" fetch
@@ -34,6 +40,14 @@ git checkout "$STABLE_COMMIT" 2>/dev/null || {
   echo "Commit $STABLE_COMMIT not found, trying master (may be incompatible)"
   git checkout master
 }
+
+if grep -q 'MMDVM, RPTL login from' MMDVMNetwork.cpp 2>/dev/null; then
+  echo "== MMDVM_Bridge RPTL login patch already applied, skipping"
+else
+  echo "== applying MMDVM_Bridge RPTL login patch"
+  [[ -f "$PATCH" ]] || { echo "Patch file missing: $PATCH" >&2; exit 1; }
+  patch -p1 < "$PATCH"
+fi
 
 echo "== building"
 make -j"$(nproc)"
