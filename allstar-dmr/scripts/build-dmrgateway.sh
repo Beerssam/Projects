@@ -16,17 +16,26 @@ apt update
 apt install -y git build-essential libmosquitto-dev nlohmann-json3-dev
 
 SRC=/opt/DMRGateway-src
+# Use a known-stable commit (20240831, GitID #29397cf) -- the bleeding-edge
+# master (20260713) has an MMDVM protocol incompatibility
+# ("Unknown packet from the MMDVM") with DVSwitch MMDVM_Bridge.
+# Version 20240831 is confirmed working (see GitHub issue reports).
+STABLE_COMMIT="29397cf"
 if [[ -d "$SRC/.git" ]]; then
   echo "== updating existing source in $SRC"
-  git -C "$SRC" pull --ff-only
+  git -C "$SRC" fetch
 else
   echo "== cloning DMRGateway source"
   git clone https://github.com/g4klx/DMRGateway.git "$SRC"
-  cd "$SRC"
 fi
+cd "$SRC"
+echo "== checking out stable commit $STABLE_COMMIT"
+git checkout "$STABLE_COMMIT" 2>/dev/null || {
+  echo "Commit $STABLE_COMMIT not found, trying master (may be incompatible)"
+  git checkout master
+}
 
 echo "== building"
-cd "$SRC"
 make -j"$(nproc)"
 
 echo "== installing to /usr/local/bin/DMRGateway"
