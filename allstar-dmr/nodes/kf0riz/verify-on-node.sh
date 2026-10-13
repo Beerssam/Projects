@@ -10,7 +10,8 @@
 #   1. No __SET_...__ password markers left in the LIVE configs (silent killer).
 #   2. The three daemons are actually running: DMRGateway, MMDVM_Bridge, Analog_Bridge.
 #   3. The localhost bridge leg has its UDP ports bound (no bind conflict).
-#   4. For every ENABLED DMRGateway network stanza, the DMRGateway log shows
+#   4. For every ENABLED DMRGateway network stanza, the DMRGateway log (log file
+#      or systemd journal -- the KF0RIZ template logs to stdout) shows
 #      recent evidence of a successful login ("connected") to that network,
 #      and no recent login failures.
 #
@@ -113,11 +114,19 @@ else
 fi
 LOG_FILE=$(ls -t "$LOG_DIR/${LOG_ROOT}"-*.log 2>/dev/null | head -1)
 [[ -z "$LOG_FILE" ]] && LOG_FILE=$(ls -t "$LOG_DIR"/*.log 2>/dev/null | head -1)
-if [[ -z "$LOG_FILE" || ! -r "$LOG_FILE" ]]; then
-  warn "no readable DMRGateway log in $LOG_DIR (try sudo)"
-else
+# The KF0RIZ template logs to stdout (captured by the systemd journal), not to
+# a file -- fall back to the journal so the per-network checks still run.
+RECENT=""
+if [[ -n "$LOG_FILE" && -r "$LOG_FILE" ]]; then
   echo "  log: $LOG_FILE"
   RECENT=$(tail -n 5000 "$LOG_FILE")
+elif command -v journalctl >/dev/null 2>&1 && systemctl cat dmrgateway >/dev/null 2>&1; then
+  echo "  log: journalctl -u dmrgateway (no file log configured)"
+  RECENT=$(journalctl -u dmrgateway --no-pager -n 5000 2>/dev/null)
+fi
+if [[ -z "$RECENT" ]]; then
+  warn "no readable DMRGateway log (no log file in $LOG_DIR, no journal for dmrgateway -- try sudo)"
+else
 
   # enabled [DMR Network N] stanzas (N>=1)
   mapfile -t net_sections < <(grep -oE '^\[DMR Network [0-9]+\]' "$DG_INI" || true)
