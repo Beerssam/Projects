@@ -1,1 +1,166 @@
-IyEvdXNyL2Jpbi9lbnYgYmFzaAojIGRlcGxveS1vbi1ub2RlLnNoIC0tIGluc3RhbGwgdGhlIEtGMFJJWiBtdWx0aS1tb2RlIERNUiBjb25maWdzIG9uIHRoZSBBU0wzIG5vZGUuCiMKIyBSdW4gd2l0aCBzdWRvIEZST00gQSBGUkVTSCBgZ2l0IHB1bGxgIG9mIHRoaXMgcmVwbyBvbiB0aGUgbm9kZToKIyAgIGNkIH4vUHJvamVjdHMvYWxsc3Rhci1kbXIvbm9kZXMva2Ywcml6ICYmIHN1ZG8gYmFzaCBkZXBsb3ktb24tbm9kZS5zaAojCiMgV2hhdCBpdCBkb2VzLCBpbiBvcmRlcjoKIyAgIDAuIENoZWNrcyBETVJHYXRld2F5IGlzIGluc3RhbGxlZCAoaXQgaXMgTk9UIHBhcnQgb2YgRFZTd2l0Y2ggLS0gcnVuCiMgICAgICAuLi8uLi9zY3JpcHRzL2J1aWxkLWRtcmdhdGV3YXkuc2ggZmlyc3QgaWYgaXQgaXMgbWlzc2luZykKIyAgIDEuIEJhY2tzIHVwIHRoZSBub2RlJ3MgbGl2ZSBjb25maWdzIHRvIC9yb290L2Rtci1jb25maWctYmFja3VwLTx0aW1lc3RhbXA+LwojICAgMi4gSW5zdGFsbHMgdGhlIGRtcmdhdGV3YXkuc2VydmljZSBzeXN0ZW1kIHVuaXQgKGlmIG5vdCBhbHJlYWR5IHByZXNlbnQpCiMgICAzLiBTdGFnZXMgdGhlIG5ldyBjb25maWdzIGFuZCBmaWxscyB0aGUgX19TRVRfLi4uX18gcGFzc3dvcmQgbWFya2VycyAtLQojICAgICAgZmlyc3QgcmV1c2luZyBhbnkgcGFzc3dvcmRzIHRoZSBub2RlIGFscmVhZHkgaGFzIChhbiBleGlzdGluZwojICAgICAgRE1SR2F0ZXdheS5pbmksIG9yIHRoZSBzdG9jayBNTURWTV9CcmlkZ2UuaW5pKSwgb25seSBhc2tpbmcgZm9yIG9uZXMKIyAgICAgIHRoYXQgYXJlIG1pc3NpbmcuIFR5cGVkIGlucHV0IGlzIGhpZGRlbiwgbmV2ZXIgd3JpdHRlbiB0byBkaXNrIG9yCiMgICAgICBjb21taXR0ZWQuCiMgICA0LiBSdW5zIHRoZSByZXBvJ3MgdmFsaWRhdGUtZG1yLWNvbmZpZ3Muc2ggYWdhaW5zdCB0aGUgc3RhZ2VkIGZpbGVzCiMgICA1LiBDb3BpZXMgdGhlIHN0YWdlZCBmaWxlcyBvdmVyIC9vcHQvLi4uCiMgICA2LiBSZXN0YXJ0cyB0aGUgYnJpZGdlIGNoYWluIGluIG9yZGVyOiBETVJHYXRld2F5IC0+IE1NRFZNX0JyaWRnZSAtPiBBbmFsb2dfQnJpZGdlCiMKIyBJZiBhbnl0aGluZyBsb29rcyB3cm9uZyBpdCBzdG9wcyBCRUZPUkUgdG91Y2hpbmcgdGhlIG5vZGUuIFlvdSBjYW4gcmUtcnVuIGl0LgpzZXQgLXUKU0NSSVBUX0RJUj0iJChjZCAiJChkaXJuYW1lICIkMCIpIiAmJiBwd2QpIgpTUkNfRElSPSIkU0NSSVBUX0RJUiIKU1RBR0U9IiQobWt0ZW1wIC1kKSIKCmZhaWwoKSB7IGVjaG8gIkVSUk9SOiAkMSIgPiYyOyBleGl0IDE7IH0KaW5mbygpIHsgZWNobyAiPT0gJDEiOyB9CgojIGluaV9wYXNzd29yZCBGSUxFIFNFQ1RJT04gLS0gcHJpbnQgdGhlIFBhc3N3b3JkPSB2YWx1ZSBmcm9tIFtTRUNUSU9OXSBvZiBhbgojIGluaSBmaWxlLCB3aXRoIHN1cnJvdW5kaW5nIHF1b3RlcyBzdHJpcHBlZC4gSWdub3JlcyBfX1NFVF8uLi5fXyBtYXJrZXJzICh0aGV5CiMgbWVhbiAibm90IGZpbGxlZCBpbiIpIGFuZCBwcmludHMgbm90aGluZyB3aGVuIHRoZSB2YWx1ZSBpcyBtaXNzaW5nLgppbmlfcGFzc3dvcmQoKSB7CiAgW1sgLWYgIiQxIiBdXSB8fCByZXR1cm4gMAogIGF3ayAtdiBzZWM9IiQyIiAnCiAgICAvXlxbLyB7IGN1ciA9ICQwOyBzdWIoL15cWy8sIiIsY3VyKTsgc3ViKC9cXSQvLCIiLGN1cikgfQogICAgY3VyID09IHNlYyAmJiAvXltbOnNwYWNlOl1dKlBhc3N3b3JkW1s6c3BhY2U6XV0qPS8gewogICAgICB2ID0gJDA7IHN1YigvXltePV0qPS8sIiIsdikKICAgICAgZ3N1YigvXltbOnNwYWNlOl1dK3xbWzpzcGFjZTpdXSskLywiIix2KQogICAgICBzdWIoL14iLywiIix2KTsgc3ViKC8iJC8sIiIsdikKICAgICAgaWYgKHYgIT0gIiIgJiYgdiAhfiAvXl9fU0VUX1tBLVphLXowLTlfXStfXyQvKSBwcmludCB2CiAgICAgIGV4aXQKICAgIH0KICAnICIkMSIKfQoKIyBzZXRfcGFzc3dvcmQgRklMRSBNQVJLRVIgVkFMVUUgLS0gcmVwbGFjZSB0aGUgd2hvbGUgbGluZSBQYXNzd29yZD0iTUFSS0VSIgojIHdpdGggUGFzc3dvcmQ9IlZBTFVFIi4gYXdrIHN0cmluZyBhc3NpZ25tZW50IGlzIGxpdGVyYWwsIHNvIHBhc3N3b3JkcwojIGNvbnRhaW5pbmcgJiwgXCwgcXVvdGVzIG9yIHNwYWNlcyBhcmUgd3JpdHRlbiBzYWZlbHkgKHNlZCB3b3VsZCBtYW5nbGUgdGhlbSkuCnNldF9wYXNzd29yZCgpIHsKICBhd2sgLXYgbT0iJDIiIC12IHA9IiQzIiAnCiAgICAkMCA9PSAiUGFzc3dvcmQ9XCIiIG0gIlwiIiB7ICQwID0gIlBhc3N3b3JkPVwiIiBwICJcIiIgfQogICAgeyBwcmludCB9CiAgJyAiJDEiID4gIiQxLm5ldyIgJiYgbXYgIiQxLm5ldyIgIiQxIgp9CgpbWyAkRVVJRCAtZXEgMCBdXSB8fCBmYWlsICJydW4gdGhpcyB3aXRoIHN1ZG8iCmZvciBmIGluIERNUkdhdGV3YXkuaW5pIE1NRFZNX0JyaWRnZS5pbmkgQW5hbG9nX0JyaWRnZS5pbmkgZG1yZ2F0ZXdheS5zZXJ2aWNlOyBkbwogIFtbIC1mICIkU1JDX0RJUi8kZiIgXV0gfHwgZmFpbCAic291cmNlIGZpbGUgbWlzc2luZzogJFNSQ19ESVIvJGYiCmRvbmUKCiMgMC4gRE1SR2F0ZXdheSBtdXN0IGJlIGluc3RhbGxlZCAoaXQgZG9lcyBub3QgY29tZSB3aXRoIERWU3dpdGNoKS4KW1sgLXggL3Vzci9sb2NhbC9iaW4vRE1SR2F0ZXdheSBdXSB8fCBmYWlsICJETVJHYXRld2F5IG5vdCBmb3VuZCBhdCAvdXNyL2xvY2FsL2Jpbi9ETVJHYXRld2F5IC0tIHJ1bjogc3VkbyBiYXNoICRTQ1JJUFRfRElSLy4uLy4uL3NjcmlwdHMvYnVpbGQtZG1yZ2F0ZXdheS5zaCBmaXJzdCIKCkRHX0RJUj0vb3B0L0RNUkdhdGV3YXkKbWtkaXIgLXAgIiRER19ESVIiIHx8IGZhaWwgImNhbm5vdCBjcmVhdGUgJERHX0RJUiIKREdfRFNUPSIkREdfRElSL0RNUkdhdGV3YXkuaW5pIgpNTV9EU1Q9L29wdC9NTURWTV9CcmlkZ2UvTU1EVk1fQnJpZGdlLmluaQpBQl9EU1Q9L29wdC9BbmFsb2dfQnJpZGdlL0FuYWxvZ19CcmlkZ2UuaW5pCmZvciBkIGluICIkREdfRElSIiAiJChkaXJuYW1lICIkTU1fRFNUIikiICIkKGRpcm5hbWUgIiRBQl9EU1QiKSI7IGRvCiAgW1sgLWQgIiRkIiBdXSB8fCBmYWlsICJleHBlY3RlZCBpbnN0YWxsIGRpciBtaXNzaW5nOiAkZCAoaXMgRFZTd2l0Y2ggU2VydmVyIGluc3RhbGxlZD8pIgpkb25lCiMgTk9URTogL29wdC9NTURWTV9CcmlkZ2UvRFZTd2l0Y2guaW5pIGlzIGludGVudGlvbmFsbHkgbGVmdCBhbG9uZSAtLSB0aGUgc3RvY2sKIyBbRE1SXSBwYXJ0bmVyIHBvcnRzICh0eFBvcnQ9MzExMDAvcnhQb3J0PTMxMTAzKSBhcmUgYWxyZWFkeSBjb3JyZWN0LgoKIyBJbnN0YWxsIHRoZSBzeXN0ZW1kIHVuaXQgZm9yIERNUkdhdGV3YXkgaWYgaXQgaXMgbm90IGFscmVhZHkgdGhlcmUuCmlmIFtbICEgLWYgL2V0Yy9zeXN0ZW1kL3N5c3RlbS9kbXJnYXRld2F5LnNlcnZpY2UgXV07IHRoZW4KICBpbmZvICJpbnN0YWxsaW5nIGRtcmdhdGV3YXkuc2VydmljZSBzeXN0ZW1kIHVuaXQiCiAgY3AgLXAgIiRTUkNfRElSL2RtcmdhdGV3YXkuc2VydmljZSIgL2V0Yy9zeXN0ZW1kL3N5c3RlbS9kbXJnYXRld2F5LnNlcnZpY2UKICBzeXN0ZW1jdGwgZGFlbW9uLXJlbG9hZAogIHN5c3RlbWN0bCBlbmFibGUgZG1yZ2F0ZXdheS5zZXJ2aWNlCmVsc2UKICBpbmZvICJkbXJnYXRld2F5LnNlcnZpY2UgYWxyZWFkeSBpbnN0YWxsZWQiCmZpCgojIDEuIEJhY2t1cCBsaXZlIGNvbmZpZ3MuClRTPSQoZGF0ZSArJVklbSVkLSVIJU0lUykKQkFDS1VQPSIvcm9vdC9kbXItY29uZmlnLWJhY2t1cC0kVFMiCm1rZGlyIC1wICIkQkFDS1VQIiB8fCBmYWlsICJjYW5ub3QgY3JlYXRlICRCQUNLVVAiCmluZm8gImJhY2tpbmcgdXAgbGl2ZSBjb25maWdzIHRvICRCQUNLVVAiCmZvciBmIGluICIkREdfRFNUIiAiJE1NX0RTVCIgIiRBQl9EU1QiOyBkbwogIFtbIC1mICIkZiIgXV0gJiYgY3AgLXAgIiRmIiAiJEJBQ0tVUC8iICYmIGVjaG8gIiAgc2F2ZWQgJChiYXNlbmFtZSAiJGYiKSIKZG9uZQoKIyAyLiBTdGFnZSBjb3BpZXMgYW5kIGZpbGwgaW4gcGFzc3dvcmRzLiBGaXJzdCB0cnkgdG8gcmV1c2UgcGFzc3dvcmRzIHRoZSBub2RlCiMgICAgYWxyZWFkeSBoYXMsIHNvIG5vdGhpbmcgaGFzIHRvIGJlIHJlLWVudGVyZWQ6CiMgICAgICBCcmFuZE1laXN0ZXI6IFtETVIgTmV0d29yayAxXSBvZiBhbiBleGlzdGluZyAvb3B0L0RNUkdhdGV3YXkvRE1SR2F0ZXdheS5pbmksCiMgICAgICAgICAgICAgICAgICAgIGVsc2UgW0RNUiBOZXR3b3JrXSBvZiB0aGUgc3RvY2sgL29wdC9NTURWTV9CcmlkZ2UvTU1EVk1fQnJpZGdlLmluaQojICAgICAgVEdJRiAgICAgICAgOiBbRE1SIE5ldHdvcmsgMl0gb2YgYW4gZXhpc3RpbmcgL29wdC9ETVJHYXRld2F5L0RNUkdhdGV3YXkuaW5pCmNwIC1wICIkU1JDX0RJUiIvRE1SR2F0ZXdheS5pbmkgIiRTUkNfRElSIi9NTURWTV9CcmlkZ2UuaW5pICIkU1JDX0RJUiIvQW5hbG9nX0JyaWRnZS5pbmkgIiRTVEFHRS8iIFwKICB8fCBmYWlsICJjYW5ub3Qgc3RhZ2UgY29uZmlncyIKCkJNX1BXPSIiOyBUR0lGX1BXPSIiOyBCTV9TUkM9IiI7IFRHSUZfU1JDPSIiCmlmIFtbIC1mICIkREdfRFNUIiBdXTsgdGhlbgogIEJNX1BXPSIkKGluaV9wYXNzd29yZCAiJERHX0RTVCIgIkRNUiBOZXR3b3JrIDEiKSIKICBbWyAtbiAiJEJNX1BXIiBdXSAmJiBCTV9TUkM9IiRER19EU1QiCiAgVEdJRl9QVz0iJChpbmlfcGFzc3dvcmQgIiRER19EU1QiICJETVIgTmV0d29yayAyIikiCiAgW1sgLW4gIiRUR0lGX1BXIiBdXSAmJiBUR0lGX1NSQz0iJERHX0RTVCIKZmkKaWYgW1sgLXogIiRCTV9QVyIgJiYgLWYgIiRNTV9EU1QiIF1dOyB0aGVuCiAgQk1fUFc9IiQoaW5pX3Bhc3N3b3JkICIkTU1fRFNUIiAiRE1SIE5ldHdvcmsiKSIKICBbWyAtbiAiJEJNX1BXIiBdXSAmJiBCTV9TUkM9IiRNTV9EU1QiCmZpCgplY2hvCmlmIFtbIC1uICIkQk1fUFciIF1dOyB0aGVuCiAgaW5mbyAicmV1c2luZyBCcmFuZE1laXN0ZXIgaG90c3BvdCBwYXNzd29yZCBmb3VuZCBpbiAkQk1fU1JDIChubyBuZWVkIHRvIHJlLWVudGVyKSIKZWxzZQogIHJlYWQgLXIgLXMgLXAgIkJyYW5kTWVpc3RlciBob3RzcG90IHNlY3VyaXR5IHBhc3N3b3JkOiAiIEJNX1BXOyBlY2hvCmZpCmlmIFtbIC1uICIkVEdJRl9QVyIgXV07IHRoZW4KICBpbmZvICJyZXVzaW5nIFRHSUYgcGFzc3dvcmQgZm91bmQgaW4gJFRHSUZfU1JDIChubyBuZWVkIHRvIHJlLWVudGVyKSIKZWxzZQogIHJlYWQgLXIgLXMgLXAgIlRHSUYgaG90c3BvdCBwYXNzd29yZDogIiBUR0lGX1BXOyBlY2hvCmZpCltbIC1uICIkQk1fUFciICYmIC1uICIkVEdJRl9QVyIgXV0gfHwgZmFpbCAiZW1wdHkgcGFzc3dvcmQocykgLS0gYWJvcnRpbmcsIG5vdGhpbmcgY2hhbmdlZCIKCnNldF9wYXNzd29yZCAiJFNUQUdFL0RNUkdhdGV3YXkuaW5pIiAiX19TRVRfQk1fSE9UU1BPVF9QQVNTV09SRF9fIiAiJEJNX1BXIgpzZXRfcGFzc3dvcmQgIiRTVEFHRS9ETVJHYXRld2F5LmluaSIgIl9fU0VUX1RHSUZfUEFTU1dPUkRfXyIgIiRUR0lGX1BXIgppZiBncmVwIC1xICdeUGFzc3dvcmQ9LipfX1NFVF8nICIkU1RBR0UvRE1SR2F0ZXdheS5pbmkiOyB0aGVuCiAgZmFpbCAicGFzc3dvcmQgc3Vic3RpdHV0aW9uIGRpZCBub3QgY29tcGxldGUgLS0gYWJvcnRpbmcsIG5vdGhpbmcgY2hhbmdlZCIKZmkKaW5mbyAicGFzc3dvcmRzIHN1YnN0aXR1dGVkIGluIHN0YWdlZCBjb3B5IgoKIyAzLiBWYWxpZGF0ZSB0aGUgc3RhZ2VkIHNldC4KVkFMSURBVE9SPSIkU0NSSVBUX0RJUi8uLi8uLi9zY3JpcHRzL3ZhbGlkYXRlLWRtci1jb25maWdzLnNoIgppZiBbWyAteCAiJFZBTElEQVRPUiIgfHwgLWYgIiRWQUxJREFUT1IiIF1dOyB0aGVuCiAgaW5mbyAidmFsaWRhdGluZyBzdGFnZWQgY29uZmlncyIKICBiYXNoICIkVkFMSURBVE9SIiAiJFNUQUdFIiB8fCBmYWlsICJ2YWxpZGF0aW9uIGZhaWxlZCAtLSBhYm9ydGluZywgbm90aGluZyBjaGFuZ2VkIgplbHNlCiAgZWNobyAid2FybjogdmFsaWRhdG9yIG5vdCBmb3VuZCBhdCAkVkFMSURBVE9SLCBza2lwcGluZyIKZmkKCiMgNC4gSW5zdGFsbC4KaW5mbyAiaW5zdGFsbGluZyBjb25maWdzIgpjcCAtcCAiJFNUQUdFL0RNUkdhdGV3YXkuaW5pIiAiJERHX0RTVCIKY3AgLXAgIiRTVEFHRS9NTURWTV9CcmlkZ2UuaW5pIiAiJE1NX0RTVCIKY3AgLXAgIiRTVEFHRS9BbmFsb2dfQnJpZGdlLmluaSIgIiRBQl9EU1QiCnJtIC1yZiAiJFNUQUdFIgp1bnNldCBCTV9QVyBUR0lGX1BXIEJNX1NSQyBUR0lGX1NSQwoKIyA1LiBSZXN0YXJ0IHRoZSBicmlkZ2UgY2hhaW4gaW4gb3JkZXIuIFVuaXQgbmFtZXMgdmFyeSBieSBpbnN0YWxsLCBzbyBvbmx5CiMgICAgcmVzdGFydCB1bml0cyB0aGF0IGFjdHVhbGx5IGV4aXN0OyByZXBvcnQgYW55dGhpbmcgd2UgY291bGQgbm90IGZpbmQuCmluZm8gInJlc3RhcnRpbmcgYnJpZGdlIGNoYWluIChETVJHYXRld2F5IC0+IE1NRFZNX0JyaWRnZSAtPiBBbmFsb2dfQnJpZGdlKSIKZm9yIHVuaXQgaW4gZG1yZ2F0ZXdheSBtbWR2bV9icmlkZ2UgYW5hbG9nX2JyaWRnZTsgZG8KICBpZiBzeXN0ZW1jdGwgY2F0ICIkdW5pdCIgPi9kZXYvbnVsbCAyPiYxOyB0aGVuCiAgICBzeXN0ZW1jdGwgcmVzdGFydCAiJHVuaXQiICYmIGVjaG8gIiAgcmVzdGFydGVkICR1bml0IgogIGVsc2UKICAgIGVjaG8gIiAgbm90ZTogc3lzdGVtZCB1bml0ICckdW5pdCcgbm90IGZvdW5kIC0tIHJlc3RhcnQgaXQgbWFudWFsbHkgaWYgaXQgcnVucyBhbm90aGVyIHdheSIKICBmaQpkb25lCgplY2hvCmluZm8gImRvbmUuIEJhY2t1cCBpcyBpbiAkQkFDS1VQLiIKZWNobyAiVGVzdCBpdDogIHN1ZG8gL29wdC9NTURWTV9CcmlkZ2UvZHZzd2l0Y2guc2ggdHVuZSA5MSIKZWNobyAiSWYgc29tZXRoaW5nIGlzIG9mZiwgcmVzdG9yZSB3aXRoOiAgc3VkbyBjcCAkQkFDS1VQLyouaW5pIDxiYWNrIHRvIC9vcHQvLi4uPiAmJiByZXN0YXJ0IHRoZSBjaGFpbi4iCg==
+#!/usr/bin/env bash
+# deploy-on-node.sh -- install the KF0RIZ multi-mode DMR configs on the ASL3 node.
+#
+# Run with sudo FROM A FRESH `git pull` of this repo on the node:
+#   cd ~/Projects/allstar-dmr/nodes/kf0riz && sudo bash deploy-on-node.sh
+#
+# What it does, in order:
+#   0. Checks DMRGateway is installed (it is NOT part of DVSwitch -- run
+#      ../../scripts/build-dmrgateway.sh first if it is missing)
+#   1. Backs up the node's live configs to /root/dmr-config-backup-<timestamp>/
+#   2. Installs the dmrgateway.service systemd unit (if not already present)
+#   3. Stages the new configs and fills the __SET_...__ password markers --
+#      first reusing any passwords the node already has (an existing
+#      DMRGateway.ini, or the stock MMDVM_Bridge.ini), only asking for ones
+#      that are missing. Typed input is hidden, never written to disk or
+#      committed.
+#   4. Runs the repo's validate-dmr-configs.sh against the staged files
+#   5. Copies the staged files over /opt/...
+#   6. Restarts the bridge chain in order: DMRGateway -> MMDVM_Bridge -> Analog_Bridge
+#
+# If anything looks wrong it stops BEFORE touching the node. You can re-run it.
+set -u
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SRC_DIR="$SCRIPT_DIR"
+STAGE="$(mktemp -d)"
+
+fail() { echo "ERROR: $1" >&2; exit 1; }
+info() { echo "== $1"; }
+
+# ini_password FILE SECTION -- print the Password= value from [SECTION] of an
+# ini file, with surrounding quotes stripped. Ignores __SET_...__ markers (they
+# mean "not filled in") and prints nothing when the value is missing.
+ini_password() {
+  [[ -f "$1" ]] || return 0
+  awk -v sec="$2" '
+    /^\[/ { cur = $0; sub(/^\[/,"",cur); sub(/\]$/,"",cur) }
+    cur == sec && /^[[:space:]]*Password[[:space:]]*=/ {
+      v = $0; sub(/^[^=]*=/,"",v)
+      gsub(/^[[:space:]]+|[[:space:]]+$/,"",v)
+      sub(/^"/,"",v); sub(/"$/,"",v)
+      if (v != "" && v !~ /^__SET_[A-Za-z0-9_]+__$/) print v
+      exit
+    }
+  ' "$1"
+}
+
+# set_password FILE MARKER VALUE -- replace the whole line Password="MARKER"
+# with Password="VALUE". awk string assignment is literal, so passwords
+# containing &, \, quotes or spaces are written safely (sed would mangle them).
+set_password() {
+  awk -v m="$2" -v p="$3" '
+    $0 == "Password=\"" m "\"" { $0 = "Password=\"" p "\"" }
+    { print }
+  ' "$1" > "$1.new" && mv "$1.new" "$1"
+}
+
+[[ $EUID -eq 0 ]] || fail "run this with sudo"
+for f in DMRGateway.ini MMDVM_Bridge.ini Analog_Bridge.ini dmrgateway.service; do
+  [[ -f "$SRC_DIR/$f" ]] || fail "source file missing: $SRC_DIR/$f"
+done
+
+# 0. DMRGateway must be installed (it does not come with DVSwitch).
+[[ -x /usr/local/bin/DMRGateway ]] || fail "DMRGateway not found at /usr/local/bin/DMRGateway -- run: sudo bash $SCRIPT_DIR/../../scripts/build-dmrgateway.sh first"
+
+DG_DIR=/opt/DMRGateway
+mkdir -p "$DG_DIR" || fail "cannot create $DG_DIR"
+DG_DST="$DG_DIR/DMRGateway.ini"
+MM_DST=/opt/MMDVM_Bridge/MMDVM_Bridge.ini
+AB_DST=/opt/Analog_Bridge/Analog_Bridge.ini
+for d in "$DG_DIR" "$(dirname "$MM_DST")" "$(dirname "$AB_DST")"; do
+  [[ -d "$d" ]] || fail "expected install dir missing: $d (is DVSwitch Server installed?)"
+done
+# NOTE: /opt/MMDVM_Bridge/DVSwitch.ini is intentionally left alone -- the stock
+# [DMR] partner ports (txPort=31100/rxPort=31103) are already correct.
+
+# Install the systemd unit for DMRGateway if it is not already there.
+if [[ ! -f /etc/systemd/system/dmrgateway.service ]]; then
+  info "installing dmrgateway.service systemd unit"
+  cp -p "$SRC_DIR/dmrgateway.service" /etc/systemd/system/dmrgateway.service
+  systemctl daemon-reload
+  systemctl enable dmrgateway.service
+else
+  info "dmrgateway.service already installed"
+fi
+
+# 1. Backup live configs.
+TS=$(date +%Y%m%d-%H%M%S)
+BACKUP="/root/dmr-config-backup-$TS"
+mkdir -p "$BACKUP" || fail "cannot create $BACKUP"
+info "backing up live configs to $BACKUP"
+for f in "$DG_DST" "$MM_DST" "$AB_DST"; do
+  [[ -f "$f" ]] && cp -p "$f" "$BACKUP/" && echo "  saved $(basename "$f")"
+done
+
+# 2. Stage copies and fill in passwords. First try to reuse passwords the node
+#    already has, so nothing has to be re-entered:
+#      BrandMeister: [DMR Network 1] of an existing /opt/DMRGateway/DMRGateway.ini,
+#                    else [DMR Network] of the stock /opt/MMDVM_Bridge/MMDVM_Bridge.ini
+#      TGIF        : [DMR Network 2] of an existing /opt/DMRGateway/DMRGateway.ini
+cp -p "$SRC_DIR"/DMRGateway.ini "$SRC_DIR"/MMDVM_Bridge.ini "$SRC_DIR"/Analog_Bridge.ini "$STAGE/" \
+  || fail "cannot stage configs"
+
+BM_PW=""; TGIF_PW=""; BM_SRC=""; TGIF_SRC=""
+if [[ -f "$DG_DST" ]]; then
+  BM_PW="$(ini_password "$DG_DST" "DMR Network 1")"
+  [[ -n "$BM_PW" ]] && BM_SRC="$DG_DST"
+  TGIF_PW="$(ini_password "$DG_DST" "DMR Network 2")"
+  [[ -n "$TGIF_PW" ]] && TGIF_SRC="$DG_DST"
+fi
+if [[ -z "$BM_PW" && -f "$MM_DST" ]]; then
+  BM_PW="$(ini_password "$MM_DST" "DMR Network")"
+  [[ -n "$BM_PW" ]] && BM_SRC="$MM_DST"
+fi
+
+echo
+if [[ -n "$BM_PW" ]]; then
+  info "reusing BrandMeister hotspot password found in $BM_SRC (no need to re-enter)"
+else
+  read -r -s -p "BrandMeister hotspot security password: " BM_PW; echo
+fi
+if [[ -n "$TGIF_PW" ]]; then
+  info "reusing TGIF password found in $TGIF_SRC (no need to re-enter)"
+else
+  read -r -s -p "TGIF hotspot password: " TGIF_PW; echo
+fi
+[[ -n "$BM_PW" && -n "$TGIF_PW" ]] || fail "empty password(s) -- aborting, nothing changed"
+
+set_password "$STAGE/DMRGateway.ini" "__SET_BM_HOTSPOT_PASSWORD__" "$BM_PW"
+set_password "$STAGE/DMRGateway.ini" "__SET_TGIF_PASSWORD__" "$TGIF_PW"
+if grep -q '^Password=.*__SET_' "$STAGE/DMRGateway.ini"; then
+  fail "password substitution did not complete -- aborting, nothing changed"
+fi
+info "passwords substituted in staged copy"
+
+# 3. Validate the staged set.
+VALIDATOR="$SCRIPT_DIR/../../scripts/validate-dmr-configs.sh"
+if [[ -x "$VALIDATOR" || -f "$VALIDATOR" ]]; then
+  info "validating staged configs"
+  bash "$VALIDATOR" "$STAGE" || fail "validation failed -- aborting, nothing changed"
+else
+  echo "warn: validator not found at $VALIDATOR, skipping"
+fi
+
+# 4. Install.
+info "installing configs"
+cp -p "$STAGE/DMRGateway.ini" "$DG_DST"
+cp -p "$STAGE/MMDVM_Bridge.ini" "$MM_DST"
+cp -p "$STAGE/Analog_Bridge.ini" "$AB_DST"
+rm -rf "$STAGE"
+unset BM_PW TGIF_PW BM_SRC TGIF_SRC
+
+# 5. Restart the bridge chain in order. Unit names vary by install, so only
+#    restart units that actually exist; report anything we could not find.
+info "restarting bridge chain (DMRGateway -> MMDVM_Bridge -> Analog_Bridge)"
+for unit in dmrgateway mmdvm_bridge analog_bridge; do
+  if systemctl cat "$unit" >/dev/null 2>&1; then
+    systemctl restart "$unit" && echo "  restarted $unit"
+  else
+    echo "  note: systemd unit '$unit' not found -- restart it manually if it runs another way"
+  fi
+done
+
+echo
+info "done. Backup is in $BACKUP."
+echo "Test it:  sudo /opt/MMDVM_Bridge/dvswitch.sh tune 91"
+echo "If something is off, restore with:  sudo cp $BACKUP/*.ini <back to /opt/...> && restart the chain."
