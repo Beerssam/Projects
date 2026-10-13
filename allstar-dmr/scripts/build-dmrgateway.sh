@@ -1,1 +1,44 @@
-IyEvdXNyL2Jpbi9lbnYgYmFzaAojIGJ1aWxkLWRtcmdhdGV3YXkuc2ggLS0gYnVpbGQgYW5kIGluc3RhbGwgRE1SR2F0ZXdheSBmcm9tIHNvdXJjZS4KIwojIERNUkdhdGV3YXkgaXMgTk9UIGluIHRoZSBEVlN3aXRjaCBhcHQgcmVwbyBhbmQgTk9UIGNvbmZpZ3VyZWQgYnkgdGhlIGR2cwojIG1lbnUsIHNvIG11bHRpLW1vZGUgRE1SIG5lZWRzIHRoaXMgc2VwYXJhdGUgc3RlcC4gUnVuIHdpdGggc3VkbyBvbiB0aGUgbm9kZToKIyAgIHN1ZG8gYmFzaCBzY3JpcHRzL2J1aWxkLWRtcmdhdGV3YXkuc2gKIwojIENsb25lcy91cGRhdGVzIGdpdGh1Yi5jb20vZzRrbHgvRE1SR2F0ZXdheSBpbnRvIC9vcHQvRE1SR2F0ZXdheS1zcmMsCiMgYnVpbGRzIGl0LCBhbmQgaW5zdGFsbHMgdGhlIGJpbmFyeSB0byAvdXNyL2xvY2FsL2Jpbi9ETVJHYXRld2F5LgpzZXQgLWV1byBwaXBlZmFpbAoKW1sgJEVVSUQgLWVxIDAgXV0gfHwgeyBlY2hvICJSdW4gYXMgcm9vdCAoc3VkbykuIiA+JjI7IGV4aXQgMTsgfQoKZWNobyAiPT0gaW5zdGFsbGluZyBidWlsZCBkZXBlbmRlbmNpZXMiCmFwdCB1cGRhdGUKYXB0IGluc3RhbGwgLXkgZ2l0IGJ1aWxkLWVzc2VudGlhbCBsaWJtb3NxdWl0dG8tZGV2IG5sb2htYW5uLWpzb24zLWRldgoKU1JDPS9vcHQvRE1SR2F0ZXdheS1zcmMKaWYgW1sgLWQgIiRTUkMvLmdpdCIgXV07IHRoZW4KICBlY2hvICI9PSB1cGRhdGluZyBleGlzdGluZyBzb3VyY2UgaW4gJFNSQyIKICBnaXQgLUMgIiRTUkMiIHB1bGwgLS1mZi1vbmx5CmVsc2UKICBlY2hvICI9PSBjbG9uaW5nIERNUkdhdGV3YXkgc291cmNlIgogIGdpdCBjbG9uZSBodHRwczovL2dpdGh1Yi5jb20vZzRrbHgvRE1SR2F0ZXdheS5naXQgIiRTUkMiCiAgY2QgIiRTUkMiCmZpCgplY2hvICI9PSBidWlsZGluZyIKY2QgIiRTUkMiCm1ha2UgLWoiJChucHJvYykiCgplY2hvICI9PSBpbnN0YWxsaW5nIHRvIC91c3IvbG9jYWwvYmluL0RNUkdhdGV3YXkiCm1ha2UgaW5zdGFsbAovdXNyL2xvY2FsL2Jpbi9ETVJHYXRld2F5IC0tdmVyc2lvbgoKZWNobwplY2hvICJJbnN0YWxsZWQuIE5leHQ6IgplY2hvICIgIDEuIHN1ZG8gbWtkaXIgLXAgL29wdC9ETVJHYXRld2F5IgplY2hvICIgIDIuIENvcHkgbm9kZXMva2Ywcml6L0RNUkdhdGV3YXkuaW5pIHRvIC9vcHQvRE1SR2F0ZXdheS9ETVJHYXRld2F5LmluaSIKZWNobyAiICAgICAob3IgcnVuIG5vZGVzL2tmMHJpei9kZXBsb3ktb24tbm9kZS5zaCwgd2hpY2ggZG9lcyBzdGVwcyAyLTUpIgplY2hvICIgIDMuIEZpbGwgaW4gdGhlIF9fU0VUXy4uLl9fIHBhc3N3b3JkIG1hcmtlcnMgaW4gdGhhdCBmaWxlIgplY2hvICIgIDQuIEluc3RhbGwgdGhlIHN5c3RlbWQgdW5pdDogbm9kZXMva2Ywcml6L2RtcmdhdGV3YXkuc2VydmljZSAtPiIKZWNobyAiICAgICAvZXRjL3N5c3RlbWQvc3lzdGVtL2RtcmdhdGV3YXkuc2VydmljZSwgdGhlbiIKZWNobyAiICAgICBzdWRvIHN5c3RlbWN0bCBkYWVtb24tcmVsb2FkICYmIHN1ZG8gc3lzdGVtY3RsIGVuYWJsZSAtLW5vdyBkbXJnYXRld2F5Igo=
+#!/usr/bin/env bash
+# build-dmrgateway.sh -- build and install DMRGateway from source.
+#
+# DMRGateway is NOT in the DVSwitch apt repo and NOT configured by the dvs
+# menu, so multi-mode DMR needs this separate step. Run with sudo on the node:
+#   sudo bash scripts/build-dmrgateway.sh
+#
+# Clones/updates github.com/g4klx/DMRGateway into /opt/DMRGateway-src,
+# builds it, and installs the binary to /usr/local/bin/DMRGateway.
+set -euo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "Run as root (sudo)." >&2; exit 1; }
+
+echo "== installing build dependencies"
+apt update
+apt install -y git build-essential libmosquitto-dev nlohmann-json3-dev
+
+SRC=/opt/DMRGateway-src
+if [[ -d "$SRC/.git" ]]; then
+  echo "== updating existing source in $SRC"
+  git -C "$SRC" pull --ff-only
+else
+  echo "== cloning DMRGateway source"
+  git clone https://github.com/g4klx/DMRGateway.git "$SRC"
+  cd "$SRC"
+fi
+
+echo "== building"
+cd "$SRC"
+make -j"$(nproc)"
+
+echo "== installing to /usr/local/bin/DMRGateway"
+make install
+/usr/local/bin/DMRGateway --version
+
+echo
+echo "Installed. Next:"
+echo "  1. sudo mkdir -p /opt/DMRGateway"
+echo "  2. Copy nodes/kf0riz/DMRGateway.ini to /opt/DMRGateway/DMRGateway.ini"
+echo "     (or run nodes/kf0riz/deploy-on-node.sh, which does steps 2-5)"
+echo "  3. Fill in the __SET_...__ password markers in that file"
+echo "  4. Install the systemd unit: nodes/kf0riz/dmrgateway.service ->"
+echo "     /etc/systemd/system/dmrgateway.service, then"
+echo "     sudo systemctl daemon-reload && sudo systemctl enable --now dmrgateway"
