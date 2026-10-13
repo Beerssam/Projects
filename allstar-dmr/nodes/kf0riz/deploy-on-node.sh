@@ -107,6 +107,10 @@ done
 #      BrandMeister: [DMR Network 1] of an existing /opt/DMRGateway/DMRGateway.ini,
 #                    else [DMR Network] of the stock /opt/MMDVM_Bridge/MMDVM_Bridge.ini
 #      TGIF        : [DMR Network 2] of an existing /opt/DMRGateway/DMRGateway.ini
+# NOTE: the repo's Analog_Bridge.ini is staged for VALIDATION ONLY. The node's
+# live Analog_Bridge.ini is never overwritten (Oct 13 2026: an earlier version
+# of this script wiped Sam's multi-mode Analog_Bridge.ini); it is installed
+# only when the node has none at all.
 cp -p "$SRC_DIR"/DMRGateway.ini "$SRC_DIR"/MMDVM_Bridge.ini "$SRC_DIR"/Analog_Bridge.ini "$STAGE/" \
   || fail "cannot stage configs"
 
@@ -151,11 +155,17 @@ else
   echo "warn: validator not found at $VALIDATOR, skipping"
 fi
 
-# 4. Install.
+# 4. Install. The node's existing Analog_Bridge.ini is PRESERVED -- the repo
+#    copy is a reference for fresh installs only (see step 2 note).
 info "installing configs"
 cp -p "$STAGE/DMRGateway.ini" "$DG_DST"
 cp -p "$STAGE/MMDVM_Bridge.ini" "$MM_DST"
-cp -p "$STAGE/Analog_Bridge.ini" "$AB_DST"
+if [[ -f "$AB_DST" ]]; then
+  info "preserving existing $AB_DST -- repo Analog_Bridge.ini not installed"
+else
+  info "no existing $AB_DST -- installing repo reference copy"
+  cp -p "$STAGE/Analog_Bridge.ini" "$AB_DST"
+fi
 rm -rf "$STAGE"
 unset BM_PW TGIF_PW BM_SRC TGIF_SRC
 
