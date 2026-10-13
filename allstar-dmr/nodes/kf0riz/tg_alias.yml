@@ -1,0 +1,40 @@
+# tg_alias.yml -- talkgroup aliases for the DVSwitch Mode Switcher (port 3000)
+# on the KF0RIZ AllStar node.
+#
+# Why this file exists: the switcher's "Switch Talkgroup" dropdown is filled
+# from THIS file. An empty dropdown (nothing to pick) means this file was
+# never filled in on the node -- that is the whole "controlwise" problem.
+#
+# Each tgid is passed VERBATIM to `dvswitch.sh tune <tgid>`, so the values
+# below are the exact dial strings from the KF0RIZ dialing plan (see
+# README.md): 4+TG for TGIF, 7003120 for KS-DMR, plain TGs for BrandMeister.
+#
+# Install on the node (find your switcher dir first):
+#   sudo find /opt -name tg_alias.yml 2>/dev/null
+#   sudo cp tg_alias.yml <switcher-dir>/configs/tg_alias.yml
+# The switcher reloads this file every tgReloadInterval (default 6 s), so
+# the web UI picks it up with NO restart. Sam can also add entries himself
+# from a browser at http://<node>:3000/edit
+modes:
+  - DMR:
+      talkgroups:
+        - tgid: "4000777"
+          alias: "TGIF 777 (scan)"
+        - tgid: "7003120"
+          alias: "KS-DMR 3120 (Kansas)"
+        - tgid: "91"
+          alias: "BM 91 Worldwide"
+        - tgid: "93"
+          alias: "BM 93 North America"
+        - tgid: "3100"
+          alias: "BM 3100 USA"
+        - tgid: "3120"
+          alias: "BM 3120 Kansas"
+  - YSF:
+      talkgroups: []
+  - P25:
+      talkgroups: []
+  - DSTAR:
+      talkgroups: []
+  - NXDN:
+      talkgroups: []
