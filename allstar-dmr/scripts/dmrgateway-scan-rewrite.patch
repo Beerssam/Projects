@@ -1,0 +1,136 @@
+diff --git a/DMRGateway.cpp b/DMRGateway.cpp
+index 24a12e6..53d521e 100644
+--- a/DMRGateway.cpp
++++ b/DMRGateway.cpp
+@@ -24,6 +24,7 @@
+ #include "RewritePC.h"
+ #include "RewriteSrcId.h"
+ #include "RewriteDstId.h"
++#include "RewriteTG.h"
+ #include "PassAllPC.h"
+ #include "PassAllTG.h"
+ #include "DMRFullLC.h"
+@@ -211,6 +212,8 @@ m_remoteControl(NULL)
+ 	m_status = new DMRGW_STATUS[3U];
+ 	m_status[1U] = DMRGWS_NONE;
+ 	m_status[2U] = DMRGWS_NONE;
++	m_scanTunedTG[1U] = 0U;
++	m_scanTunedTG[2U] = 0U;
+ 
+ 	m_config = new unsigned char[400U];
+ }
+@@ -632,6 +635,16 @@ int CDMRGateway::run()
+ 			unsigned int dstId = data.getDstId();
+ 			FLCO flco = data.getFLCO();
+ 
++			// Track the tuned TX talkgroup per slot for the scan rewrite.
++			// Captured here before any RF rewrite rules modify dstId, so we
++			// keep the MMDVM_Bridge-side TG (e.g. 4000777) rather than the
++			// network-side TG (e.g. 777).
++			if (flco == FLCO_GROUP && slotNo >= 1U && slotNo <= 2U) {
++				if (m_scanTunedTG[slotNo] != dstId)
++					LogMessage("Scan tuned TG: slot %u -> %u", slotNo, dstId);
++				m_scanTunedTG[slotNo] = dstId;
++			}
++
+ 			if (flco == FLCO_GROUP && slotNo == m_xlxSlot && dstId == m_xlxTG) {
+ 				if (m_xlxReflector != m_xlxRoom || m_xlxNumber != m_xlxStartup)
+ 					m_xlxRelink.start();
+@@ -995,6 +1008,7 @@ int CDMRGateway::run()
+ 					if (m_status[slotNo] == DMRGWS_NONE || m_status[slotNo] == DMRGWS_DMRNETWORK1) {
+ 						for (std::vector<CRewriteDynTGRF*>::iterator it = m_dynRF.begin(); it != m_dynRF.end(); ++it)
+ 							(*it)->stopVoice(slotNo);
++						processScanRewrite(data);
+ 						m_repeater->write(data);
+ 						m_status[slotNo] = DMRGWS_DMRNETWORK1;
+ 						timer[slotNo]->setTimeout(netTimeout);
+@@ -1045,6 +1059,7 @@ int CDMRGateway::run()
+ 					if (m_status[slotNo] == DMRGWS_NONE || m_status[slotNo] == DMRGWS_DMRNETWORK2) {
+ 						for (std::vector<CRewriteDynTGRF*>::iterator it = m_dynRF.begin(); it != m_dynRF.end(); ++it)
+ 							(*it)->stopVoice(slotNo);
++						processScanRewrite(data);
+ 						m_repeater->write(data);
+ 						m_status[slotNo] = DMRGWS_DMRNETWORK2;
+ 						timer[slotNo]->setTimeout(netTimeout);
+@@ -1095,6 +1110,7 @@ int CDMRGateway::run()
+ 					if (m_status[slotNo] == DMRGWS_NONE || m_status[slotNo] == DMRGWS_DMRNETWORK3) {
+ 						for (std::vector<CRewriteDynTGRF*>::iterator it = m_dynRF.begin(); it != m_dynRF.end(); ++it)
+ 							(*it)->stopVoice(slotNo);
++						processScanRewrite(data);
+ 						m_repeater->write(data);
+ 						m_status[slotNo] = DMRGWS_DMRNETWORK3;
+ 						timer[slotNo]->setTimeout(netTimeout);
+@@ -1145,6 +1161,7 @@ int CDMRGateway::run()
+ 					if (m_status[slotNo] == DMRGWS_NONE || m_status[slotNo] == DMRGWS_DMRNETWORK4) {
+ 						for (std::vector<CRewriteDynTGRF*>::iterator it = m_dynRF.begin(); it != m_dynRF.end(); ++it)
+ 							(*it)->stopVoice(slotNo);
++						processScanRewrite(data);
+ 						m_repeater->write(data);
+ 						m_status[slotNo] = DMRGWS_DMRNETWORK4;
+ 						timer[slotNo]->setTimeout(netTimeout);
+@@ -1195,6 +1212,7 @@ int CDMRGateway::run()
+ 					if (m_status[slotNo] == DMRGWS_NONE || m_status[slotNo] == DMRGWS_DMRNETWORK5) {
+ 						for (std::vector<CRewriteDynTGRF*>::iterator it = m_dynRF.begin(); it != m_dynRF.end(); ++it)
+ 							(*it)->stopVoice(slotNo);
++						processScanRewrite(data);
+ 						m_repeater->write(data);
+ 						m_status[slotNo] = DMRGWS_DMRNETWORK5;
+ 						timer[slotNo]->setTimeout(netTimeout);
+@@ -2430,6 +2448,37 @@ bool CDMRGateway::rewrite(std::vector<CRewrite*>& rewrites, CDMRData & data, boo
+ 	return false;
+ }
+ 
++void CDMRGateway::processScanRewrite(CDMRData& data)
++{
++	// Rewrite the destination TG of network->MMDVM traffic to the currently
++	// tuned TX TG so MMDVM_Bridge's export filter (exportTG=0, "follow the
++	// tuned TG") forwards scan traffic to Analog_Bridge. This makes TGIF
++	// 777-style scan TGs audible: the network returns traffic on other TGs
++	// (e.g. 4006282) while the user is tuned to the scan TG (e.g. 4000777).
++	// The TX path (MMDVM->network) is untouched.
++	if (data.getFLCO() != FLCO_GROUP)
++		return;
++
++	unsigned int slotNo = data.getSlotNo();
++	if (slotNo < 1U || slotNo > 2U)
++		return;
++
++	unsigned int tunedTG = m_scanTunedTG[slotNo];
++	if (tunedTG == 0U)
++		return;  // No TX seen yet on this slot, pass through unchanged.
++
++	unsigned int dstId = data.getDstId();
++	if (dstId == tunedTG)
++		return;  // Already matches, nothing to do.
++
++	LogMessage("Scan rewrite: TG %u -> %u (slot %u)", dstId, tunedTG, slotNo);
++
++	// 1:1 rewrite via the standard machinery so the embedded LC is updated
++	// as well as the DMRD header destination.
++	CRewriteTG rewrite("Scan", slotNo, dstId, slotNo, tunedTG, 1U);
++	rewrite.process(data, false);
++}
++
+ unsigned int CDMRGateway::getConfig(const std::string& name, unsigned char* buffer)
+ {
+ 	assert(buffer != NULL);
+diff --git a/DMRGateway.h b/DMRGateway.h
+index 93bd330..d462afa 100644
+--- a/DMRGateway.h
++++ b/DMRGateway.h
+@@ -132,6 +132,7 @@ private:
+ 	bool                   m_network5Enabled;
+ 	bool                   m_networkXlxEnabled;
+ 	CRemoteControl*        m_remoteControl;
++	unsigned int           m_scanTunedTG[3U];
+ 	
+ 	bool createMMDVM();
+ 	bool createDMRNetwork1();
+@@ -156,6 +157,7 @@ private:
+ 	void processDynamicTGControl();
+ 	void remoteControl();
+ 	void processEnableCommand(CDMRNetwork* network, const std::string& name, bool& mode, bool enabled);
++	void processScanRewrite(CDMRData& data);
+ 	void buildNetworkStatusNetworkString(std::string &str, const std::string& name, CDMRNetwork* network, bool enabled);
+ 	void buildNetworkHostNetworkString(std::string &str, const std::string& name, CDMRNetwork* network);
+ };
