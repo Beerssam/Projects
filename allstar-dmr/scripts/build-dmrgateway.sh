@@ -25,8 +25,20 @@ SRC=/opt/DMRGateway-src
 # (it waits for the local login first). See scripts/dmrgateway-rptl-login.patch,
 # applied below, which emulates the network side of the RPTL handshake.
 # (g4klx/DMRGateway issue #107 is the same failure with MMDVMHost Type=Direct.)
+# STABLE_COMMIT="29397cf" plus the RPTL patch is the known-good baseline.
+#
+# NOTE (Oct 13 2026): TGIF 777 is a "scan" TG -- the user tunes to 4000777 but
+# TGIF returns traffic on other TGs (e.g. 4006282). MMDVM_Bridge's export
+# filter (exportTG=0 in DVSwitch.ini, "follow the tuned TG") drops anything
+# that doesn't match the tuned TG, so scan audio never reaches Analog_Bridge.
+# MMDVM_Bridge is closed-source and can't be patched; instead
+# scripts/dmrgateway-scan-rewrite.patch (applied below) makes DMRGateway
+# rewrite inbound network TG to the last-seen TX TG per slot, with logging.
+# TX path (MMDVM->network) is untouched.
 STABLE_COMMIT="29397cf"
-PATCH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dmrgateway-rptl-login.patch"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RPTL_PATCH="$SCRIPT_DIR/dmrgateway-rptl-login.patch"
+SCAN_PATCH="$SCRIPT_DIR/dmrgateway-scan-rewrite.patch"
 if [[ -d "$SRC/.git" ]]; then
   echo "== updating existing source in $SRC"
   git -C "$SRC" fetch
@@ -45,8 +57,16 @@ if grep -q 'MMDVM, RPTL login from' MMDVMNetwork.cpp 2>/dev/null; then
   echo "== MMDVM_Bridge RPTL login patch already applied, skipping"
 else
   echo "== applying MMDVM_Bridge RPTL login patch"
-  [[ -f "$PATCH" ]] || { echo "Patch file missing: $PATCH" >&2; exit 1; }
-  patch -p1 < "$PATCH"
+  [[ -f "$RPTL_PATCH" ]] || { echo "Patch file missing: $RPTL_PATCH" >&2; exit 1; }
+  patch -p1 < "$RPTL_PATCH"
+fi
+
+if grep -q 'processScanRewrite' DMRGateway.cpp 2>/dev/null; then
+  echo "== TGIF scan rewrite patch already applied, skipping"
+else
+  echo "== applying TGIF scan rewrite patch"
+  [[ -f "$SCAN_PATCH" ]] || { echo "Patch file missing: $SCAN_PATCH" >&2; exit 1; }
+  patch -p1 < "$SCAN_PATCH"
 fi
 
 echo "== building"
