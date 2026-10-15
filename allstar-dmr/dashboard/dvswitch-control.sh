@@ -113,28 +113,23 @@ do_status() {
 }
 
 do_tune() {
-  local tgid calltype
+  local tgid
   tgid=$(get_param tgid)
-  calltype=$(get_param calltype)
   # Validate: 1-7 digit number only
   if ! [[ "$tgid" =~ ^[0-9]{1,7}$ ]]; then
     printf '{"ok":false,"error":"Invalid TGID"}'
     return
   fi
-  # Validate call type
-  if [[ "$calltype" != "private" ]]; then
-    calltype="group"
-  fi
   if [[ ! -x "$DVS_SWITCH" ]]; then
     printf '{"ok":false,"error":"dvswitch.sh not found"}'
     return
   fi
-  # For private calls, prefix the TGID with 'P' if dvswitch.sh supports it,
-  # otherwise tune normally (DMRGateway PCRewrite handles routing by frame type).
-  # The call type is recorded for the UI; the actual private/group distinction
-  # is set by the radio/Analog_Bridge configuration.
+  # NOTE: the DVSwitch chain (dvswitch.sh tune -> MMDVM_Bridge) always emits
+  # group-call frames; there is no per-tune group/private switch. Service
+  # TGs that require a real private call (BM Parrot 9990) are converted by
+  # the DMRGateway private-call patch (scripts/dmrgateway-private-call.patch).
   if sudo "$DVS_SWITCH" tune "$tgid" >/dev/null 2>&1; then
-    printf '{"ok":true,"tgid":"%s","calltype":"%s"}' "$tgid" "$calltype"
+    printf '{"ok":true,"tgid":"%s"}' "$tgid"
   else
     printf '{"ok":false,"error":"tune command failed"}'
   fi
