@@ -128,10 +128,9 @@
       <span class="alias">Tune</span>
     </button>
   </div>
-  <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-    <span style="font-size:0.85em; color:#64748b;">Call type:</span>
-    <button class="net-btn" id="call-group" style="flex:1;">Group</button>
-    <button class="net-btn" id="call-private" style="flex:1;">Private</button>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+    The tune path always sends a group call; service TGs that need a private
+    call (BM Parrot 9990) are converted by the gateway automatically.
   </div>
   <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="prefix-hint">
     Select a network above — the prefix is added automatically.
@@ -162,6 +161,7 @@ const PRESETS = [
   { tgid: "93",     alias: "BM 93 N. America", net: "bm" },
   { tgid: "3100",   alias: "BM 3100 USA", net: "bm" },
   { tgid: "3120",   alias: "BM 3120 Kansas", net: "bm" },
+  { tgid: "9990",   alias: "BM Parrot (private)", net: "bm" },
   { tgid: "4000",   alias: "Disconnect", net: "" },
 ];
 
@@ -186,9 +186,9 @@ function buildPresets() {
   });
 }
 
-function tune(tgid, ctype = "group") {
+function tune(tgid) {
   document.getElementById("current-desc").textContent = "Tuning...";
-  api("tune", { tgid, calltype: ctype }).then(r => {
+  api("tune", { tgid }).then(r => {
     if (r.ok) {
       setTimeout(refreshStatus, 1500);
     } else {
@@ -264,20 +264,11 @@ document.querySelectorAll(".mode-btn").forEach(b => {
 });
 
 let selectedNet = "";  // for custom tune: "bm" | "tgif" | "ksdmr"
-let callType = "group";  // "group" | "private"
 
-document.getElementById("call-group").onclick = () => {
-  callType = "group";
-  document.getElementById("call-group").style.borderColor = "#22c55e";
-  document.getElementById("call-private").style.borderColor = "";
-};
-document.getElementById("call-private").onclick = () => {
-  callType = "private";
-  document.getElementById("call-private").style.borderColor = "#f59e0b";
-  document.getElementById("call-group").style.borderColor = "";
-};
-// Default to group
-document.getElementById("call-group").style.borderColor = "#22c55e";
+// NOTE: the DVSwitch chain (dvswitch.sh tune -> MMDVM_Bridge) can only emit
+// group-call frames, so there is no per-tune group/private switch. Service
+// TGs that require a private call (BM Parrot 9990) are converted to real
+// private calls by the DMRGateway private-call patch.
 
 function formatTg(input, net) {
   const digits = input.replace(/\D/g, "");
@@ -310,7 +301,7 @@ document.getElementById("custom-tune-btn").onclick = () => {
     document.getElementById("prefix-hint").textContent = "Enter a valid talkgroup number.";
     return;
   }
-  tune(tgid, callType);
+  tune(tgid);
 };
 
 // Network buttons double as the prefix selector for custom tune
