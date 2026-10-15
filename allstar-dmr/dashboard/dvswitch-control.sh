@@ -19,12 +19,17 @@ DMR_INI="/opt/DMRGateway/DMRGateway.ini"
 
 # --- helpers ---
 json_escape() {
-  # Escape for JSON string (basic: backslash, quote, newline)
-  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\n' ' ' | sed 's/  */ /g'
+  # Escape for JSON string (basic: backslash, quote, newline). Tabs and other
+  # control chars are flattened to spaces: a literal TAB inside a JSON string
+  # is invalid JSON and makes the browser's r.json() throw (this is what made
+  # the P25/NXDN dropdowns silently fall back to the short hardcoded list).
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr '\t\n\r' '   ' | sed 's/  */ /g'
 }
 
 urldecode() {
-  printf '%b' "${1//%/\\x}"
+  # URLSearchParams encodes space as '+'; convert before %XX decoding
+  local s="${1//+/ }"
+  printf '%b' "${s//%/\\x}"
 }
 
 get_param() {
@@ -140,11 +145,16 @@ do_status() {
 }
 
 do_tune() {
-  local tgid
+  local tgid tune_re
   tgid=$(get_param tgid)
-  # Validate: alphanumeric, dash, up to 12 chars (for YSF/DSTAR reflector names like REF001C)
-  # DMR TGs are numeric; reflector names are alphanumeric
-  if ! [[ "$tgid" =~ ^[A-Za-z0-9-]{1,12}$ ]]; then
+  # Validate: 1-12 chars, alphanumeric/dash, spaces allowed after the first
+  # char (reflector names like "M17-001 A" contain a space; DMR TGs are
+  # numeric). The value is passed quoted to dvswitch.sh, so a space is safe.
+  # The regex lives in a variable: [[ =~ ]] misparses a literal space in a
+  # bracket expression, but a variable-held pattern is treated as one regex.
+  # (Dash stays last in each class: "9- " would be an invalid reversed range.)
+  tune_re='^[A-Za-z0-9-][A-Za-z0-9 -]{0,11}$'
+  if ! [[ "$tgid" =~ $tune_re ]]; then
     printf '{"ok":false,"error":"Invalid tune value"}'
     return
   fi
@@ -182,14 +192,33 @@ do_mode() {
 }
 
 find_hostfile() {
-  # $1 = basename (e.g. YSFHosts.txt); search common DVSwitch locations
-  local base="$1" d
+  # $1 = keyword (lowercase, e.g. "p25"); remaining args = exact basenames to
+  # try first (e.g. P25Hosts.txt P25_Hosts.txt).
+  # Returns the first readable match in the common DVSwitch locations. If no
+  # exact name hits, scans those directories for any readable *.txt whose name
+  # contains the keyword -- handles installs where the files are named or
+  # cased differently (P25/NXDN/M17 lists were reported missing even with the
+  # exact names in the search list).
+  local kw="$1"; shift
+  local base d f
   for d in /var/lib/mmdvm /usr/local/etc /var/lib/dvswitch /opt/MMDVM_Bridge \
            /opt/dvswitch /usr/local/etc/dvswitch /etc/dvswitch; do
-    if [[ -r "$d/$base" ]]; then
-      printf '%s' "$d/$base"
-      return 0
-    fi
+    for base in "$@"; do
+      if [[ -r "$d/$base" ]]; then
+        printf '%s' "$d/$base"
+        return 0
+      fi
+    done
+  done
+  for d in /var/lib/mmdvm /usr/local/etc /var/lib/dvswitch /opt/MMDVM_Bridge \
+           /opt/dvswitch /usr/local/etc/dvswitch /etc/dvswitch; do
+    [[ -d "$d" ]] || continue
+    for f in "$d"/*; do
+      [[ -f "$f" && -r "$f" ]] || continue
+      case "$(basename "$f" | tr 'A-Z' 'a-z')" in
+        *"$kw"*.txt) printf '%s' "$f"; return 0 ;;
+      esac
+    done
   done
   return 1
 }
@@ -199,12 +228,13 @@ do_reflectors() {
   local mode f line id name count=0 first=1
   mode=$(get_param mode | tr 'A-Z' 'a-z')
   case "$mode" in
-    ysf)   f=$(find_hostfile "YSFHosts.txt") ;;
-    p25)   f=$(find_hostfile "P25Hosts.txt") ;;
-    nxdn)  f=$(find_hostfile "NXDNHosts.txt") ;;
+    ysf)   f=$(find_hostfile "ysf"   "YSFHosts.txt") ;;
+    p25)   f=$(find_hostfile "p25"   "P25Hosts.txt" "P25_Hosts.txt") ;;
+    nxdn)  f=$(find_hostfile "nxdn"  "NXDNHosts.txt" "NXDN_Hosts.txt") ;;
+    m17)   f=$(find_hostfile "m17"   "M17Hosts.txt" "M17_Hosts.txt") ;;
     dstar)
-      # D-STAR has three host files; use DPlus (REF) as primary
-      f=$(find_hostfile "DPlus_Hosts.txt")
+      # D-STAR has three host files; DPlus (REF) is the primary list
+      f=$(find_hostfile "dplus" "DPlus_Hosts.txt" "DExtra_Hosts.txt" "DCS_Hosts.txt")
       ;;
     *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
   esac
@@ -213,32 +243,38 @@ do_reflectors() {
     return
   fi
   printf '{"ok":true,"reflectors":['
-  if [[ "$mode" == "dstar" ]]; then
-    # DPlus_Hosts.txt format: "REF001C  address" (whitespace separated)
-    while IFS= read -r line && [[ $count -lt 300 ]]; do
-      [[ "$line" =~ ^#.*$ ]] && continue
-      [[ -z "${line// }" ]] && continue
-      id=$(printf '%s' "$line" | awk '{print $1}')
-      [[ -z "$id" ]] && continue
-      name="$id"
-      if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
-      printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
-      count=$((count+1))
-    done < "$f"
-  else
-    # YSF/P25/NXDN format: "ID;Name;Address;..." (semicolon separated)
-    while IFS= read -r line && [[ $count -lt 300 ]]; do
-      [[ "$line" =~ ^#.*$ ]] && continue
-      [[ -z "${line// }" ]] && continue
-      id=$(printf '%s' "$line" | cut -d';' -f1 | tr -d ' ')
-      name=$(printf '%s' "$line" | cut -d';' -f2 | sed 's/^ *//;s/ *$//')
-      [[ -z "$id" ]] && continue
-      [[ -z "$name" ]] && name="$id"
-      if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
-      printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
-      count=$((count+1))
-    done < "$f"
-  fi
+  # Per-mode data-line formats (verified against the live Pi-Star/dvref files):
+  #   YSFHosts.txt : "designator;name;description;host;port;000;" (semicolons)
+  #   P25Hosts.txt / NXDNHosts.txt : "designator<TAB>host<TAB>port" (Pi-Star
+  #     header literally says "# Format: designator<TAB>host<TAB>port"; there
+  #     is NO name column, so the host is shown as the label). The old code
+  #     parsed these as semicolon-separated, which stuffed literal TABs into
+  #     the JSON ids -> invalid JSON -> the page silently fell back to the
+  #     short hardcoded list.
+  #   D-STAR host files : "REF001C  address" (whitespace separated)
+  while IFS= read -r line && [[ $count -lt 300 ]]; do
+    [[ "$line" =~ ^#.*$ ]] && continue
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    case "$mode" in
+      ysf)
+        id=$(printf '%s' "$line" | cut -d';' -f1 | sed 's/^ *//;s/ *$//')
+        name=$(printf '%s' "$line" | cut -d';' -f2 | sed 's/^ *//;s/ *$//')
+        ;;
+      p25|nxdn)
+        id=$(printf '%s' "$line" | awk '{print $1}')
+        name=$(printf '%s' "$line" | awk '{print $2}')
+        ;;
+      *)
+        id=$(printf '%s' "$line" | awk '{print $1}')
+        name="$id"
+        ;;
+    esac
+    [[ -z "$id" ]] && continue
+    [[ -z "$name" ]] && name="$id"
+    if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
+    printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
+    count=$((count+1))
+  done < "$f"
   printf ']}'
 }
 
