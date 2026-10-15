@@ -275,7 +275,10 @@ do_reflectors() {
   local mode f line id name count=0 first=1
   mode=$(get_param mode | tr 'A-Z' 'a-z')
   case "$mode" in
-    ysf)   f=$(find_hostfile "ysf"   "YSFHosts.txt") ;;
+    ysf)   f=$(find_hostfile "ysf"   "YSFHosts.txt")
+           # Also try FCS rooms (separate file, same directory)
+           fcs=$(find_hostfile "fcs" "FCSRooms.txt")
+           ;;
     p25)   f=$(find_hostfile "p25"   "P25Hosts.txt" "P25_Hosts.txt") ;;
     nxdn)  f=$(find_hostfile "nxdn"  "NXDNHosts.txt" "NXDN_Hosts.txt") ;;
     m17)   f=$(find_hostfile "m17"   "M17Hosts.txt" "M17_Hosts.txt") ;;
@@ -285,6 +288,13 @@ do_reflectors() {
       ;;
     *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
   esac
+  # For YSF, merge FCS rooms into the list if found
+  if [[ "$mode" == "ysf" && -n "$fcs" && "$fcs" != "$f" ]]; then
+    # We'll append FCS entries after the YSF ones in the output loop
+    fcs_file="$fcs"
+  else
+    fcs_file=""
+  fi
   if [[ -z "$f" ]]; then
     # No local host file -- try the DVRef API (cached 24h)
     do_reflectors_web "$mode"
@@ -323,6 +333,30 @@ do_reflectors() {
     printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
     count=$((count+1))
   done < "$f"
+  # Append FCS rooms for YSF mode (separate file, e.g. FCS00155)
+  if [[ -n "$fcs_file" && -r "$fcs_file" ]]; then
+    while IFS= read -r line && [[ $count -lt 400 ]]; do
+      [[ "$line" =~ ^#.*$ ]] && continue
+      [[ -z "${line//[[:space:]]/}" ]] && continue
+      # FCSRooms.txt: try "FCS00155;Name;..." or "FCS00155 Name" formats
+      if [[ "$line" == *";"* ]]; then
+        id=$(printf '%s' "$line" | cut -d';' -f1 | sed 's/^ *//;s/ *$//')
+        name=$(printf '%s' "$line" | cut -d';' -f2 | sed 's/^ *//;s/ *$//')
+      else
+        id=$(printf '%s' "$line" | awk '{print $1}')
+        name=$(printf '%s' "$line" | awk '{print $2}')
+      fi
+      [[ -z "$id" ]] && continue
+      [[ -z "$name" ]] && name="$id"
+      # Prefix with FCS if not already (some files list just the number)
+      if ! [[ "$id" =~ ^FCS ]]; then
+        id="FCS${id}"
+      fi
+      if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
+      printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
+      count=$((count+1))
+    done < "$fcs_file"
+  fi
   printf ']}'
 }
 
