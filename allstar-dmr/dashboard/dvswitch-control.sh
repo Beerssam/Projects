@@ -184,8 +184,8 @@ do_mode() {
 find_hostfile() {
   # $1 = basename (e.g. YSFHosts.txt); search common DVSwitch locations
   local base="$1" d
-  for d in /usr/local/etc /var/lib/dvswitch /opt/MMDVM_Bridge /opt/dvswitch \
-           /usr/local/etc/dvswitch /etc/dvswitch; do
+  for d in /var/lib/mmdvm /usr/local/etc /var/lib/dvswitch /opt/MMDVM_Bridge \
+           /opt/dvswitch /usr/local/etc/dvswitch /etc/dvswitch; do
     if [[ -r "$d/$base" ]]; then
       printf '%s' "$d/$base"
       return 0
