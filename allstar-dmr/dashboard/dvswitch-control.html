@@ -57,8 +57,12 @@
   .tune-display {
     text-align: center; padding: 16px;
     background: #0f172a; border-radius: 10px; margin-bottom: 12px;
+    overflow: hidden;
   }
-  .tune-display .tg { font-size: 2em; font-weight: 700; color: #38bdf8; }
+  .tune-display .tg {
+    font-size: 2em; font-weight: 700; color: #38bdf8;
+    word-break: break-all; overflow-wrap: break-word; max-width: 100%;
+  }
   .tune-display .desc { font-size: 0.9em; color: #94a3b8; margin-top: 4px; }
   .tune-display .real-src { font-size: 0.85em; color: #f59e0b; margin-top: 8px; }
   .log-box {
@@ -137,6 +141,15 @@
   </div>
 </div>
 
+<div class="card hidden" id="mode-tune-card">
+  <h2 id="mode-tune-title">Tune</h2>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="mode-tune-input" placeholder="Enter value..." inputmode="text" autocomplete="off">
+    <button class="tune-btn" id="mode-tune-btn">Tune</button>
+  </div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="mode-tune-hint"></div>
+</div>
+
 <div class="card">
   <h2>Services</h2>
   <div id="services">
@@ -204,10 +217,51 @@ function setMode(mode) {
     b.classList.toggle("active", b.dataset.mode === mode);
   });
   document.getElementById("dmr-card").classList.toggle("hidden", mode !== "DMR");
+  
+  // Show mode-specific tune card for non-DMR modes
+  const modeTuneCard = document.getElementById("mode-tune-card");
+  const modeTuneTitle = document.getElementById("mode-tune-title");
+  const modeTuneInput = document.getElementById("mode-tune-input");
+  const modeTuneHint = document.getElementById("mode-tune-hint");
+  
+  if (mode === "DMR") {
+    modeTuneCard.classList.add("hidden");
+  } else {
+    modeTuneCard.classList.remove("hidden");
+    const configs = {
+      "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345 or YSF12345", hint: "Enter YSF reflector number or ID" },
+      "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Enter P25 talkgroup number" },
+      "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Enter NXDN talkgroup number" },
+      "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Enter D-STAR reflector (e.g. REF001C, XRF002A)" },
+    };
+    const cfg = configs[mode] || { title: mode + " Tune", placeholder: "Enter value...", hint: "" };
+    modeTuneTitle.textContent = cfg.title;
+    modeTuneInput.placeholder = cfg.placeholder;
+    modeTuneInput.value = "";
+    modeTuneHint.textContent = cfg.hint;
+  }
+  
   api("mode", { mode }).then(r => {
     if (r.ok) setTimeout(refreshStatus, 1500);
   });
 }
+
+// Tune for non-DMR modes (YSF/P25/NXDN/D-STAR)
+document.getElementById("mode-tune-btn").addEventListener("click", () => {
+  const input = document.getElementById("mode-tune-input");
+  const val = input.value.trim();
+  if (!val) return;
+  document.getElementById("current-desc").textContent = "Tuning...";
+  api("tune", { tgid: val }).then(r => {
+    if (r.ok) {
+      setTimeout(refreshStatus, 1500);
+    } else {
+      document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
+    }
+  }).catch(e => {
+    document.getElementById("current-desc").textContent = "Tune error: " + e.message;
+  });
+});
 
 function refreshStatus() {
   api("status").then(r => {
@@ -225,6 +279,24 @@ function refreshStatus() {
       b.classList.toggle("active", b.dataset.mode === r.mode);
     });
     document.getElementById("dmr-card").classList.toggle("hidden", r.mode !== "DMR");
+    
+    // Mode-specific tune card for non-DMR
+    const modeTuneCard = document.getElementById("mode-tune-card");
+    if (r.mode === "DMR") {
+      modeTuneCard.classList.add("hidden");
+    } else {
+      modeTuneCard.classList.remove("hidden");
+      const configs = {
+        "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345 or YSF12345", hint: "Enter YSF reflector number or ID" },
+        "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Enter P25 talkgroup number" },
+        "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Enter NXDN talkgroup number" },
+        "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Enter D-STAR reflector (e.g. REF001C, XRF002A)" },
+      };
+      const cfg = configs[r.mode] || { title: r.mode + " Tune", placeholder: "Enter value...", hint: "" };
+      document.getElementById("mode-tune-title").textContent = cfg.title;
+      document.getElementById("mode-tune-input").placeholder = cfg.placeholder;
+      document.getElementById("mode-tune-hint").textContent = cfg.hint;
+    }
     
     // Network indicator
     const netMap = { "4": "tgif", "7": "ksdmr" };
