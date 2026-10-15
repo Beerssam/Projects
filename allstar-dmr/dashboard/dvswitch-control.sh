@@ -43,15 +43,29 @@ svc_state() {
 }
 
 current_mode() {
-  # Analog_Bridge.ini [AMBE] mode or similar; fall back to dvswitch.sh status
-  # Try to read the mode from the ini
-  local m
-  m=$(grep -i "^mode" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | tr -d ' ')
-  if [[ -n "$m" ]]; then
-    printf '%s' "$m"
-  else
-    printf 'DMR'
+  # Read the LIVE mode the same way dvswitch.sh does ("dvswitch.sh mode" with
+  # no args -> getABInfoValue tlv ambe_mode). Analog_Bridge writes
+  # /tmp/ABInfo_*.json and updates tlv.ambe_mode on every mode change, so this
+  # reflects reality. (The ini has no mode= line; grepping it always fell back
+  # to DMR, which made the UI "jump back to DMR" on every refresh.)
+  local f m
+  f=$(ls -t /tmp/ABInfo_*.json 2>/dev/null | head -1)
+  if [[ -n "$f" && -r "$f" ]]; then
+    m=$(python3 -c 'import json,sys
+try:
+  d = json.load(open(sys.argv[1]))
+  print(d.get("tlv", {}).get("ambe_mode", ""))
+except Exception:
+  print("")' "$f" 2>/dev/null)
   fi
+  case "${m^^}" in
+    YSF|YSFN|YSFW) printf 'YSF' ;;
+    DMR)   printf 'DMR' ;;
+    P25)   printf 'P25' ;;
+    NXDN)  printf 'NXDN' ;;
+    DSTAR) printf 'DSTAR' ;;
+    *)     printf '' ;;   # unknown / Analog_Bridge not running: highlight nothing
+  esac
 }
 
 current_tune() {
@@ -75,7 +89,15 @@ tune_alias() {
     3100)    printf 'BM 3100 USA' ;;
     3120)    printf 'BM 3120 Kansas' ;;
     4000)    printf 'Disconnect' ;;
-    *)       printf '' ;;
+    *)
+      # A 7-digit value that is not a dial string (4xxxxxx/7xxxxxx) is a DMR
+      # ID, not a talkgroup (Analog_Bridge defaults txTG to the DMR ID).
+      if [[ "$1" =~ ^[0-9]{7}$ ]] && ! [[ "$1" =~ ^[47] ]]; then
+        printf 'not a talkgroup (DMR ID?) — tune below'
+      else
+        printf ''
+      fi
+      ;;
   esac
 }
 
@@ -120,9 +142,10 @@ do_status() {
 do_tune() {
   local tgid
   tgid=$(get_param tgid)
-  # Validate: 1-7 digit number only
-  if ! [[ "$tgid" =~ ^[0-9]{1,7}$ ]]; then
-    printf '{"ok":false,"error":"Invalid TGID"}'
+  # Validate: alphanumeric, dash, up to 12 chars (for YSF/DSTAR reflector names like REF001C)
+  # DMR TGs are numeric; reflector names are alphanumeric
+  if ! [[ "$tgid" =~ ^[A-Za-z0-9-]{1,12}$ ]]; then
+    printf '{"ok":false,"error":"Invalid tune value"}'
     return
   fi
   if [[ ! -x "$DVS_SWITCH" ]]; then
@@ -144,7 +167,7 @@ do_mode() {
   local mode
   mode=$(get_param mode)
   case "$mode" in
-    DMR|YSF|P25|NXDN|DSTAR) ;;
+    DMR|YSF|P25|NXDN|DSTAR|M17) ;;
     *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
   esac
   if [[ ! -x "$DVS_SWITCH" ]]; then
