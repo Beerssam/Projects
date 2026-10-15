@@ -181,6 +181,67 @@ do_mode() {
   fi
 }
 
+find_hostfile() {
+  # $1 = basename (e.g. YSFHosts.txt); search common DVSwitch locations
+  local base="$1" d
+  for d in /usr/local/etc /var/lib/dvswitch /opt/MMDVM_Bridge /opt/dvswitch \
+           /usr/local/etc/dvswitch /etc/dvswitch; do
+    if [[ -r "$d/$base" ]]; then
+      printf '%s' "$d/$base"
+      return 0
+    fi
+  done
+  return 1
+}
+
+do_reflectors() {
+  # ?mode=ysf|p25|nxdn|dstar -> JSON list from the node's host files
+  local mode f line id name count=0 first=1
+  mode=$(get_param mode | tr 'A-Z' 'a-z')
+  case "$mode" in
+    ysf)   f=$(find_hostfile "YSFHosts.txt") ;;
+    p25)   f=$(find_hostfile "P25Hosts.txt") ;;
+    nxdn)  f=$(find_hostfile "NXDNHosts.txt") ;;
+    dstar)
+      # D-STAR has three host files; use DPlus (REF) as primary
+      f=$(find_hostfile "DPlus_Hosts.txt")
+      ;;
+    *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
+  esac
+  if [[ -z "$f" ]]; then
+    printf '{"ok":true,"reflectors":[]}'
+    return
+  fi
+  printf '{"ok":true,"reflectors":['
+  if [[ "$mode" == "dstar" ]]; then
+    # DPlus_Hosts.txt format: "REF001C  address" (whitespace separated)
+    while IFS= read -r line && [[ $count -lt 300 ]]; do
+      [[ "$line" =~ ^#.*$ ]] && continue
+      [[ -z "${line// }" ]] && continue
+      id=$(printf '%s' "$line" | awk '{print $1}')
+      [[ -z "$id" ]] && continue
+      name="$id"
+      if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
+      printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
+      count=$((count+1))
+    done < "$f"
+  else
+    # YSF/P25/NXDN format: "ID;Name;Address;..." (semicolon separated)
+    while IFS= read -r line && [[ $count -lt 300 ]]; do
+      [[ "$line" =~ ^#.*$ ]] && continue
+      [[ -z "${line// }" ]] && continue
+      id=$(printf '%s' "$line" | cut -d';' -f1 | tr -d ' ')
+      name=$(printf '%s' "$line" | cut -d';' -f2 | sed 's/^ *//;s/ *$//')
+      [[ -z "$id" ]] && continue
+      [[ -z "$name" ]] && name="$id"
+      if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
+      printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
+      count=$((count+1))
+    done < "$f"
+  fi
+  printf ']}'
+}
+
 # --- main ---
 printf 'Content-Type: application/json\r\n'
 printf 'Cache-Control: no-cache\r\n'
@@ -188,8 +249,9 @@ printf '\r\n'
 
 action=$(get_param action)
 case "$action" in
-  status) do_status ;;
-  tune)   do_tune ;;
-  mode)   do_mode ;;
-  *)      printf '{"ok":false,"error":"Unknown action"}' ;;
+  status)     do_status ;;
+  tune)       do_tune ;;
+  mode)       do_mode ;;
+  reflectors) do_reflectors ;;
+  *)          printf '{"ok":false,"error":"Unknown action"}' ;;
 esac
