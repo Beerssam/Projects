@@ -40,6 +40,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPTL_PATCH="$SCRIPT_DIR/dmrgateway-rptl-login.patch"
 SCAN_PATCH="$SCRIPT_DIR/dmrgateway-scan-rewrite.patch"
 LOGCHANGE_PATCH="$SCRIPT_DIR/dmrgateway-scan-logchange.patch"
+PRIVATECALL_PATCH="$SCRIPT_DIR/dmrgateway-private-call.patch"
 if [[ -d "$SRC/.git" ]]; then
   echo "== updating existing source in $SRC"
   git -C "$SRC" fetch
@@ -80,6 +81,21 @@ else
   echo "== applying scan log-change patch"
   [[ -f "$LOGCHANGE_PATCH" ]] || { echo "Patch file missing: $LOGCHANGE_PATCH" >&2; exit 1; }
   patch -p1 < "$LOGCHANGE_PATCH"
+fi
+
+# (Oct 15 2026): the DVSwitch chain (dvswitch.sh tune -> MMDVM_Bridge) can
+# only emit group-call frames, so there is no way to place a real private
+# call (e.g. BrandMeister Parrot 9990) from the dashboard tune path.
+# scripts/dmrgateway-private-call.patch (applied below) converts group-call
+# frames addressed to service TGs (9990) into private calls before the
+# rewrite rules are tried, so the existing PCRewrite rules route them.
+# Depends on nothing else, but kept last for a stable patch order.
+if grep -q 'convertToPrivateCall' DMRGateway.cpp 2>/dev/null; then
+  echo "== private-call patch already applied, skipping"
+else
+  echo "== applying private-call patch"
+  [[ -f "$PRIVATECALL_PATCH" ]] || { echo "Patch file missing: $PRIVATECALL_PATCH" >&2; exit 1; }
+  patch -p1 < "$PRIVATECALL_PATCH"
 fi
 
 echo "== building"
