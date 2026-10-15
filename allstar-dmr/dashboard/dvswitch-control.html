@@ -185,12 +185,12 @@ const PRESETS = [
   { tgid: "4000",   alias: "Disconnect", net: "bm" },
 ];
 
-// Reflector lists for non-DMR modes
-const REFLECTORS = {
+// Reflector lists: fetched live from the node's host files via CGI.
+// Hardcoded fallback if the host files aren't found on the node.
+const REFLECTORS_FALLBACK = {
   "YSF": [
-    { id: "YSF12345", name: "US America Link" },
-    { id: "YSF67890", name: "US Ka9q" },
-    // Add more as needed
+    { id: "12345", name: "US America Link" },
+    { id: "67890", name: "US Ka9q" },
   ],
   "P25": [
     { id: "10200", name: "North America" },
@@ -208,6 +208,36 @@ const REFLECTORS = {
     { id: "M17-M17", name: "M17-M17 (Experimental)" },
   ],
 };
+const reflectorCache = {};
+
+function loadReflectors(mode, selectEl) {
+  // mode: "YSF", "P25", "NXDN", "DSTAR" (uppercase); CGI wants lowercase
+  const key = mode.toLowerCase();
+  const fill = (list) => {
+    selectEl.innerHTML = '<option value="">-- Choose from list --</option>';
+    list.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r.id;
+      opt.textContent = r.id + " - " + r.name;
+      selectEl.appendChild(opt);
+    });
+  };
+  if (reflectorCache[key]) {
+    fill(reflectorCache[key]);
+    return;
+  }
+  // Try the node first; fall back to hardcoded list
+  api("reflectors", { mode: key }).then(r => {
+    if (r.ok && r.reflectors && r.reflectors.length > 0) {
+      reflectorCache[key] = r.reflectors;
+      fill(r.reflectors);
+    } else {
+      fill(REFLECTORS_FALLBACK[mode] || []);
+    }
+  }).catch(() => {
+    fill(REFLECTORS_FALLBACK[mode] || []);
+  });
+}
 
 const CGI = "/cgi-bin/dvswitch-control.sh";
 
@@ -292,16 +322,10 @@ function setMode(mode) {
     modeTuneInput.placeholder = cfg.placeholder;
     modeTuneInput.value = "";
     modeTuneHint.textContent = cfg.hint;
-    // Populate reflector dropdown
+    // Populate reflector dropdown from the node's host files (cached)
     const sel = document.getElementById("mode-reflector-select");
-    sel.innerHTML = '<option value="">-- Choose from list --</option>';
-    (REFLECTORS[mode] || []).forEach(r => {
-      const opt = document.createElement("option");
-      opt.value = r.id;
-      opt.textContent = r.id + " - " + r.name;
-      sel.appendChild(opt);
-    });
-    // When dropdown changes, copy to input
+    sel.innerHTML = '<option value="">Loading...</option>';
+    loadReflectors(mode, sel);
     sel.onchange = () => { if (sel.value) modeTuneInput.value = sel.value; };
   }
   
@@ -365,15 +389,11 @@ function refreshStatus() {
       document.getElementById("mode-tune-title").textContent = cfg.title;
       document.getElementById("mode-tune-input").placeholder = cfg.placeholder;
       document.getElementById("mode-tune-hint").textContent = cfg.hint;
-      // Populate reflector dropdown (only if empty, to preserve user selection)
+      // Populate reflector dropdown from node's host files (only if empty, to preserve user selection)
       const sel = document.getElementById("mode-reflector-select");
       if (sel.options.length <= 1) {
-        (REFLECTORS[r.mode] || []).forEach(x => {
-          const opt = document.createElement("option");
-          opt.value = x.id;
-          opt.textContent = x.id + " - " + x.name;
-          sel.appendChild(opt);
-        });
+        sel.innerHTML = '<option value="">Loading...</option>';
+        loadReflectors(r.mode, sel);
         sel.onchange = () => {
           const inp = document.getElementById("mode-tune-input");
           if (sel.value) inp.value = sel.value;
