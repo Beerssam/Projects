@@ -86,11 +86,7 @@
     cursor: pointer;
   }
   .net-btn.active { border-color: #38bdf8; color: #fff; background: #0c4a6e; }
-  /* .active = network of the currently tuned TG (from the node).
-     .sel    = prefix network chosen for the custom-TG box (your tap).
-     They are independent: a blue button means "tuned here", an orange
-     outline means "next custom tune goes here". */
-  .net-btn.sel { border-color: #f59e0b; color: #fde68a; }
+  /* .active = the selected network (preset filter + custom-tune prefix). */
 </style>
 </head>
 <body>
@@ -415,8 +411,6 @@ document.querySelectorAll(".mode-btn").forEach(b => {
   b.onclick = () => setMode(b.dataset.mode);
 });
 
-let selectedNet = "";  // for custom tune: "bm" | "tgif" | "ksdmr"
-
 // NOTE: the DVSwitch chain (dvswitch.sh tune -> MMDVM_Bridge) can only emit
 // group-call frames, so there is no per-tune group/private switch. Service
 // TGs that require a private call (BM Parrot 9990) are converted to real
@@ -433,10 +427,6 @@ function formatTg(input, net) {
   if (net === "ksdmr") return "7" + String(num).padStart(6, "0");
   return String(num);  // BM: plain TG
 }
-
-// Which network does a tuned value belong to? Only true dial strings and
-// (Network selection is now single-purpose: blue = your selection for
-//  preset filtering + custom tune prefix. See buildPresets().)
 
 document.getElementById("custom-tune-btn").onclick = () => {
   const input = document.getElementById("custom-tg").value;
