@@ -23,20 +23,16 @@ CGI_SRC="$SCRIPT_DIR/dvswitch-control.sh"
 [[ -f "$HTML_SRC" ]] || { echo "Missing: $HTML_SRC" >&2; exit 1; }
 [[ -f "$CGI_SRC" ]] || { echo "Missing: $CGI_SRC" >&2; exit 1; }
 
-# Find Apache web root and CGI dir
+# Find Apache web root. The CGI dir is ALWAYS /var/www/cgi-bin because that is
+# what the Apache conf below (ScriptAlias /cgi-bin/ /var/www/cgi-bin/) serves.
+# (An earlier version preferred /usr/lib/cgi-bin when it existed, which caused
+# a 404 on the status/tune endpoints. Always match the conf.)
 WEB_ROOT=""
-CGI_DIR=""
+CGI_DIR="/var/www/cgi-bin"
 for d in /var/www/html /var/www /usr/share/apache2/default-site; do
   if [[ -d "$d" ]]; then WEB_ROOT="$d"; break; fi
 done
-for d in /var/www/cgi-bin /usr/lib/cgi-bin; do
-  if [[ -d "$d" ]]; then CGI_DIR="$d"; break; fi
-done
-# Fall back to creating /var/www/cgi-bin
-if [[ -z "$CGI_DIR" ]]; then
-  CGI_DIR="/var/www/cgi-bin"
-  mkdir -p "$CGI_DIR"
-fi
+mkdir -p "$CGI_DIR"
 if [[ -z "$WEB_ROOT" ]]; then
   echo "Could not find Apache web root." >&2; exit 1;
 fi
@@ -59,6 +55,12 @@ fi
 cp "$HTML_SRC" "$WEB_ROOT/dvswitch-control.html"
 cp "$CGI_SRC" "$CGI_DIR/dvswitch-control.sh"
 chmod 755 "$CGI_DIR/dvswitch-control.sh"
+# Remove a stale copy from the old (wrong) location if it exists there, so a
+# future reader doesn't mistake it for the live one.
+if [[ -f /usr/lib/cgi-bin/dvswitch-control.sh && "$CGI_DIR" != "/usr/lib/cgi-bin" ]]; then
+  rm -f /usr/lib/cgi-bin/dvswitch-control.sh
+  echo "== Removed stale CGI from /usr/lib/cgi-bin"
+fi
 echo "== Installed HTML and CGI"
 
 # Apache CGI config (if not already present)
