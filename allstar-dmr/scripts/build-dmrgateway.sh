@@ -39,6 +39,7 @@ STABLE_COMMIT="29397cf"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RPTL_PATCH="$SCRIPT_DIR/dmrgateway-rptl-login.patch"
 SCAN_PATCH="$SCRIPT_DIR/dmrgateway-scan-rewrite.patch"
+LOGCHANGE_PATCH="$SCRIPT_DIR/dmrgateway-scan-logchange.patch"
 if [[ -d "$SRC/.git" ]]; then
   echo "== updating existing source in $SRC"
   git -C "$SRC" fetch
@@ -67,6 +68,18 @@ else
   echo "== applying TGIF scan rewrite patch"
   [[ -f "$SCAN_PATCH" ]] || { echo "Patch file missing: $SCAN_PATCH" >&2; exit 1; }
   patch -p1 < "$SCAN_PATCH"
+fi
+
+# Follow-up (Oct 14 2026): the scan rewrite logs once per voice frame
+# (~17 lines/sec) while debugging. This keeps the rewrite on every frame
+# but only logs when the (slot, dst -> tuned) mapping changes. Depends on
+# the scan rewrite patch above, so it must come after it.
+if grep -q 'm_scanLoggedDst' DMRGateway.h 2>/dev/null; then
+  echo "== scan log-change patch already applied, skipping"
+else
+  echo "== applying scan log-change patch"
+  [[ -f "$LOGCHANGE_PATCH" ]] || { echo "Patch file missing: $LOGCHANGE_PATCH" >&2; exit 1; }
+  patch -p1 < "$LOGCHANGE_PATCH"
 fi
 
 echo "== building"
