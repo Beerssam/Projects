@@ -223,8 +223,55 @@ find_hostfile() {
   return 1
 }
 
+do_reflectors_web() {
+  # $1 = mode (lowercase). Fetch from DVRef API, cache 24h in /tmp.
+  # Returns JSON list or empty list on failure.
+  local mode="$1" cache="/tmp/dvswitch-reflectors-${mode}.json" url json
+  # Serve from cache if fresh (<24h)
+  if [[ -f "$cache" ]] && [[ $(($(date +%s) - $(stat -c %Y "$cache" 2>/dev/null || echo 0))) -lt 86400 ]]; then
+    json=$(cat "$cache" 2>/dev/null)
+    if [[ -n "$json" ]]; then
+      printf '{"ok":true,"reflectors":%s,"source":"dvref-cache"}' "$json"
+      return
+    fi
+  fi
+  # DVRef API endpoints (from Pi-Star host file headers)
+  case "$mode" in
+    ysf)  url="https://dvref.com/api/v2/ysf/reflectors/" ;;
+    p25)  url="https://dvref.com/api/v2/p25/reflectors/" ;;
+    nxdn) url="https://dvref.com/api/v2/nxdn/reflectors/" ;;
+    m17)  url="https://dvref.com/api/v2/m17/reflectors/" ;;
+    *) printf '{"ok":true,"reflectors":[]}'; return ;;
+  esac
+  # Fetch with callsign headers (required by DVRef)
+  json=$(curl -s --max-time 15 -H "X-DVRef-Callsign: KF0RIZ" \
+    -H "X-DVRef-Contact: KF0RIZ" "$url" 2>/dev/null | \
+    python3 -c '
+import json,sys
+try:
+  d = json.load(sys.stdin)
+  refs = d.get("data", {}).get("reflectors", [])
+  out = []
+  for r in refs[:300]:
+    rid = str(r.get("designator", ""))
+    name = r.get("name") or r.get("slug") or rid
+    if rid:
+      out.append({"id": rid, "name": name})
+  print(json.dumps(out))
+except Exception:
+  print("[]")
+' 2>/dev/null)
+  if [[ -n "$json" && "$json" != "[]" ]]; then
+    printf '%s' "$json" > "$cache" 2>/dev/null
+    printf '{"ok":true,"reflectors":%s,"source":"dvref"}' "$json"
+  else
+    printf '{"ok":true,"reflectors":[]}'
+  fi
+}
+
 do_reflectors() {
-  # ?mode=ysf|p25|nxdn|dstar -> JSON list from the node's host files
+  # ?mode=ysf|p25|nxdn|dstar|m17 -> JSON list from the node's host files,
+  # falling back to the DVRef API (cached 24h in /tmp) if not found locally.
   local mode f line id name count=0 first=1
   mode=$(get_param mode | tr 'A-Z' 'a-z')
   case "$mode" in
@@ -239,7 +286,8 @@ do_reflectors() {
     *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
   esac
   if [[ -z "$f" ]]; then
-    printf '{"ok":true,"reflectors":[]}'
+    # No local host file -- try the DVRef API (cached 24h)
+    do_reflectors_web "$mode"
     return
   fi
   printf '{"ok":true,"reflectors":['
