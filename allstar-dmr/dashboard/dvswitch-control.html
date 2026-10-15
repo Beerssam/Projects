@@ -203,7 +203,7 @@ function tune(tgid) {
   document.getElementById("current-desc").textContent = "Tuning...";
   api("tune", { tgid }).then(r => {
     if (r.ok) {
-      setTimeout(refreshStatus, 1500);
+      document.getElementById("current-desc").textContent = "Tuned to " + tgid + " (hit Refresh Status to verify)";
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
     }
@@ -241,8 +241,12 @@ function setMode(mode) {
     modeTuneHint.textContent = cfg.hint;
   }
   
+  // Send to node; do NOT auto-refresh (server state lags, causes UI to jump back).
+  // User can hit "Refresh Status" to verify.
   api("mode", { mode }).then(r => {
-    if (r.ok) setTimeout(refreshStatus, 1500);
+    if (!r.ok) {
+      document.getElementById("current-desc").textContent = "Mode change failed: " + (r.error || "unknown");
+    }
   });
 }
 
@@ -254,7 +258,7 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   document.getElementById("current-desc").textContent = "Tuning...";
   api("tune", { tgid: val }).then(r => {
     if (r.ok) {
-      setTimeout(refreshStatus, 1500);
+      document.getElementById("current-desc").textContent = "Tuned to " + val + " (hit Refresh Status to verify)";
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
     }
