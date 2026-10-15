@@ -145,7 +145,7 @@ do_status() {
 }
 
 do_tune() {
-  local tgid tune_re
+  local tgid tune_re mode tune_val
   tgid=$(get_param tgid)
   # Validate: 1-12 chars, alphanumeric/dash, spaces allowed after the first
   # char (reflector names like "M17-001 A" contain a space; DMR TGs are
@@ -162,12 +162,27 @@ do_tune() {
     printf '{"ok":false,"error":"dvswitch.sh not found"}'
     return
   fi
+  # YSF/FCS tune format (per DVSwitch forums, Steve N4IRS):
+  #   YSF reflector: prepend 8 (e.g., 41729 -> 841729)
+  #   FCS room: prepend 9 (e.g., FCS00155 -> 900155)
+  # The dashboard shows "FCS00155" but dvswitch.sh needs "900155".
+  tune_val="$tgid"
+  mode=$(current_mode)
+  if [[ "$mode" == "YSF" ]]; then
+    if [[ "$tgid" =~ ^[Ff][Cc][Ss]([0-9]+)$ ]]; then
+      # FCS00155 -> 900155
+      tune_val="9${BASH_REMATCH[1]}"
+    elif [[ "$tgid" =~ ^[0-9]{5}$ ]]; then
+      # 5-digit YSF reflector ID -> prepend 8
+      tune_val="8${tgid}"
+    fi
+  fi
   # NOTE: the DVSwitch chain (dvswitch.sh tune -> MMDVM_Bridge) always emits
   # group-call frames; there is no per-tune group/private switch. Service
   # TGs that require a real private call (BM Parrot 9990) are converted by
   # the DMRGateway private-call patch (scripts/dmrgateway-private-call.patch).
-  if sudo "$DVS_SWITCH" tune "$tgid" >/dev/null 2>&1; then
-    printf '{"ok":true,"tgid":"%s"}' "$tgid"
+  if sudo "$DVS_SWITCH" tune "$tune_val" >/dev/null 2>&1; then
+    printf '{"ok":true,"tgid":"%s","tuned_as":"%s"}' "$tgid" "$tune_val"
   else
     printf '{"ok":false,"error":"tune command failed"}'
   fi
