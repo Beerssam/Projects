@@ -55,10 +55,15 @@ current_mode() {
 }
 
 current_tune() {
-  # The tuned TG is in Analog_Bridge.ini as txTG or similar
+  # The tuned TG is in Analog_Bridge.ini as txTG. Strip comments (;) and whitespace.
   local t
-  t=$(grep -iE "^(txTG|tune)" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | tr -d ' ')
-  printf '%s' "${t:-}"
+  t=$(grep -iE "^txTG" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
+  # Validate it's numeric; otherwise return empty
+  if [[ "$t" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$t"
+  else
+    printf ''
+  fi
 }
 
 tune_alias() {
