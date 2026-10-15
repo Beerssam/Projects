@@ -86,6 +86,11 @@
     cursor: pointer;
   }
   .net-btn.active { border-color: #38bdf8; color: #fff; background: #0c4a6e; }
+  /* .active = network of the currently tuned TG (from the node).
+     .sel    = prefix network chosen for the custom-TG box (your tap).
+     They are independent: a blue button means "tuned here", an orange
+     outline means "next custom tune goes here". */
+  .net-btn.sel { border-color: #f59e0b; color: #fde68a; }
 </style>
 </head>
 <body>
@@ -112,6 +117,7 @@
     <button class="mode-btn" data-mode="P25">P25</button>
     <button class="mode-btn" data-mode="NXDN">NXDN</button>
     <button class="mode-btn" data-mode="DSTAR">D-STAR</button>
+    <button class="mode-btn" data-mode="M17">M17</button>
   </div>
 </div>
 
@@ -137,14 +143,19 @@
     call (BM Parrot 9990) are converted by the gateway automatically.
   </div>
   <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="prefix-hint">
-    Select a network above — the prefix is added automatically.
+    Blue = network you're tuned to &middot; orange = prefix for the box below.
   </div>
 </div>
 
 <div class="card hidden" id="mode-tune-card">
   <h2 id="mode-tune-title">Tune</h2>
+  <div style="margin-bottom:8px;">
+    <select id="mode-reflector-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+      <option value="">-- Choose from list --</option>
+    </select>
+  </div>
   <div style="display:flex; gap:8px;">
-    <input type="text" id="mode-tune-input" placeholder="Enter value..." inputmode="text" autocomplete="off">
+    <input type="text" id="mode-tune-input" placeholder="Or enter manually..." inputmode="text" autocomplete="off">
     <button class="tune-btn" id="mode-tune-btn">Tune</button>
   </div>
   <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="mode-tune-hint"></div>
@@ -175,8 +186,32 @@ const PRESETS = [
   { tgid: "3100",   alias: "BM 3100 USA", net: "bm" },
   { tgid: "3120",   alias: "BM 3120 Kansas", net: "bm" },
   { tgid: "9990",   alias: "BM Parrot (private)", net: "bm" },
-  { tgid: "4000",   alias: "Disconnect", net: "" },
+  { tgid: "4000",   alias: "Disconnect", net: "bm" },
 ];
+
+// Reflector lists for non-DMR modes
+const REFLECTORS = {
+  "YSF": [
+    { id: "YSF12345", name: "US America Link" },
+    { id: "YSF67890", name: "US Ka9q" },
+    // Add more as needed
+  ],
+  "P25": [
+    { id: "10200", name: "North America" },
+    { id: "10300", name: "Worldwide" },
+  ],
+  "NXDN": [
+    { id: "65000", name: "Worldwide" },
+  ],
+  "DSTAR": [
+    { id: "REF001C", name: "REF001 C (Worldwide)" },
+    { id: "REF030C", name: "REF030 C (USA)" },
+    { id: "XRF002A", name: "XRF002 A" },
+  ],
+  "M17": [
+    { id: "M17-M17", name: "M17-M17 (Experimental)" },
+  ],
+};
 
 const CGI = "/cgi-bin/dvswitch-control.sh";
 
@@ -185,10 +220,13 @@ function api(action, params = {}) {
   return fetch(`${CGI}?${q}`).then(r => r.json());
 }
 
+let selectedNet = "bm"; // Default to BrandMeister
+
 function buildPresets() {
   const grid = document.getElementById("preset-grid");
   grid.innerHTML = "";
-  PRESETS.forEach(p => {
+  // Filter presets by selected network (Disconnect shows for all)
+  PRESETS.filter(p => p.net === selectedNet || p.tgid === "4000").forEach(p => {
     const btn = document.createElement("button");
     btn.className = "preset-btn";
     btn.dataset.tgid = p.tgid;
@@ -197,13 +235,31 @@ function buildPresets() {
     btn.onclick = () => tune(p.tgid);
     grid.appendChild(btn);
   });
+  // Update network button highlights
+  document.querySelectorAll(".net-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.net === selectedNet);
+    b.classList.remove("sel");
+  });
+  // Update prefix hint
+  const hints = {
+    "bm": "BM: enter TG directly (e.g. 91)",
+    "tgif": "TGIF: enter TG, 4+zero-pad added (e.g. 777 → 4000777)",
+    "ksdmr": "KS-DMR: enter TG, 7+zero-pad added (e.g. 3120 → 7003120)",
+  };
+  document.getElementById("prefix-hint").textContent = hints[selectedNet] || "";
 }
 
 function tune(tgid) {
+  // Optimistically update the Current display
+  document.getElementById("current-tg").textContent = tgid;
   document.getElementById("current-desc").textContent = "Tuning...";
+  // Highlight the tapped preset
+  document.querySelectorAll(".preset-btn").forEach(b => {
+    b.classList.toggle("current", b.dataset.tgid === tgid);
+  });
   api("tune", { tgid }).then(r => {
     if (r.ok) {
-      document.getElementById("current-desc").textContent = "Tuned to " + tgid + " (hit Refresh Status to verify)";
+      document.getElementById("current-desc").textContent = "Tuned (hit Refresh Status to verify)";
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
     }
@@ -229,16 +285,28 @@ function setMode(mode) {
   } else {
     modeTuneCard.classList.remove("hidden");
     const configs = {
-      "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345 or YSF12345", hint: "Enter YSF reflector number or ID" },
-      "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Enter P25 talkgroup number" },
-      "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Enter NXDN talkgroup number" },
-      "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Enter D-STAR reflector (e.g. REF001C, XRF002A)" },
+      "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list or enter reflector ID" },
+      "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
+      "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Pick from list or enter TG" },
+      "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Pick from list or enter reflector" },
+      "M17":  { title: "M17 Reflector", placeholder: "e.g. M17-M17", hint: "Pick from list or enter reflector" },
     };
     const cfg = configs[mode] || { title: mode + " Tune", placeholder: "Enter value...", hint: "" };
     modeTuneTitle.textContent = cfg.title;
     modeTuneInput.placeholder = cfg.placeholder;
     modeTuneInput.value = "";
     modeTuneHint.textContent = cfg.hint;
+    // Populate reflector dropdown
+    const sel = document.getElementById("mode-reflector-select");
+    sel.innerHTML = '<option value="">-- Choose from list --</option>';
+    (REFLECTORS[mode] || []).forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r.id;
+      opt.textContent = r.id + " - " + r.name;
+      sel.appendChild(opt);
+    });
+    // When dropdown changes, copy to input
+    sel.onchange = () => { if (sel.value) modeTuneInput.value = sel.value; };
   }
   
   // Send to node; do NOT auto-refresh (server state lags, causes UI to jump back).
@@ -291,23 +359,31 @@ function refreshStatus() {
     } else {
       modeTuneCard.classList.remove("hidden");
       const configs = {
-        "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345 or YSF12345", hint: "Enter YSF reflector number or ID" },
-        "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Enter P25 talkgroup number" },
-        "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Enter NXDN talkgroup number" },
-        "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Enter D-STAR reflector (e.g. REF001C, XRF002A)" },
+        "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list or enter reflector ID" },
+        "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
+        "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Pick from list or enter TG" },
+        "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Pick from list or enter reflector" },
+        "M17":  { title: "M17 Reflector", placeholder: "e.g. M17-M17", hint: "Pick from list or enter reflector" },
       };
       const cfg = configs[r.mode] || { title: r.mode + " Tune", placeholder: "Enter value...", hint: "" };
       document.getElementById("mode-tune-title").textContent = cfg.title;
       document.getElementById("mode-tune-input").placeholder = cfg.placeholder;
       document.getElementById("mode-tune-hint").textContent = cfg.hint;
+      // Populate reflector dropdown (only if empty, to preserve user selection)
+      const sel = document.getElementById("mode-reflector-select");
+      if (sel.options.length <= 1) {
+        (REFLECTORS[r.mode] || []).forEach(x => {
+          const opt = document.createElement("option");
+          opt.value = x.id;
+          opt.textContent = x.id + " - " + x.name;
+          sel.appendChild(opt);
+        });
+        sel.onchange = () => {
+          const inp = document.getElementById("mode-tune-input");
+          if (sel.value) inp.value = sel.value;
+        };
+      }
     }
-    
-    // Network indicator
-    const netMap = { "4": "tgif", "7": "ksdmr" };
-    const net = r.tune ? (netMap[r.tune[0]] || "bm") : "";
-    document.querySelectorAll(".net-btn").forEach(b => {
-      b.classList.toggle("active", b.dataset.net === net);
-    });
     
     // Services
     const svc = (id, state) => {
@@ -358,13 +434,9 @@ function formatTg(input, net) {
   return String(num);  // BM: plain TG
 }
 
-function updatePrefixHint() {
-  const hint = document.getElementById("prefix-hint");
-  const names = { bm: "BrandMeister (no prefix)", tgif: "TGIF (4-prefix)", ksdmr: "KS-DMR (7-prefix)" };
-  hint.textContent = selectedNet
-    ? `Tuning via ${names[selectedNet]} — e.g. type 777`
-    : "Select a network above — the prefix is added automatically.";
-}
+// Which network does a tuned value belong to? Only true dial strings and
+// (Network selection is now single-purpose: blue = your selection for
+//  preset filtering + custom tune prefix. See buildPresets().)
 
 document.getElementById("custom-tune-btn").onclick = () => {
   const input = document.getElementById("custom-tg").value;
@@ -380,14 +452,12 @@ document.getElementById("custom-tune-btn").onclick = () => {
   tune(tgid);
 };
 
-// Network buttons double as the prefix selector for custom tune
+// Network buttons: select which network's presets to show + prefix for custom tune.
+// Single purpose: the blue highlight = your selection. Tapping re-builds the preset list.
 document.querySelectorAll(".net-btn").forEach(b => {
   b.onclick = () => {
     selectedNet = b.dataset.net;
-    document.querySelectorAll(".net-btn").forEach(x => {
-      x.style.borderColor = x === b ? "#f59e0b" : "";
-    });
-    updatePrefixHint();
+    buildPresets(); // Rebuilds grid and updates button highlights
   };
 });
 
