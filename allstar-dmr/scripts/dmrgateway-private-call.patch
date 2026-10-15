@@ -1,0 +1,68 @@
+--- a/DMRGateway.cpp
++++ b/DMRGateway.cpp
+@@ -132,6 +132,50 @@
+ 	return ret;
+ }
+ 
++// Private-call service TGs: the DVSwitch chain (dvswitch.sh tune ->
++// MMDVM_Bridge) can only emit group-call frames, so frames addressed to
++// these TGs are converted to private (user-user) calls here. The
++// per-network PCRewrite rules then route them (e.g. BrandMeister Parrot
++// on 9990, which only answers private calls). Extend the list as needed.
++static const unsigned int PRIVATE_CALL_TGS[] = { 9990U };
++static const unsigned int PRIVATE_CALL_TGS_COUNT = sizeof(PRIVATE_CALL_TGS) / sizeof(PRIVATE_CALL_TGS[0]);
++
++static bool isPrivateCallTG(unsigned int dstId)
++{
++	for (unsigned int i = 0U; i < PRIVATE_CALL_TGS_COUNT; i++) {
++		if (dstId == PRIVATE_CALL_TGS[i])
++			return true;
++	}
++	return false;
++}
++
++// Convert a group-call frame to a private call: set the frame metadata
++// (so the PCRewrite rules match) and re-encode the embedded link control
++// in voice headers / terminators so the network sees a real private call.
++// Voice frames between header and terminator carry no full LC; the call is
++// set up from the header, which is what matters here.
++static void convertToPrivateCall(CDMRData& data)
++{
++	data.setFLCO(FLCO_USER_USER);
++
++	unsigned char dataType = data.getDataType();
++	if (dataType != DT_VOICE_LC_HEADER && dataType != DT_TERMINATOR_WITH_LC)
++		return;
++
++	CDMRLC lc(FLCO_USER_USER, data.getSrcId(), data.getDstId());
++
++	unsigned char buffer[DMR_FRAME_LENGTH_BYTES];
++	data.getData(buffer);
++
++	CDMRFullLC fullLC;
++	fullLC.encode(lc, buffer, dataType);
++
++	data.setData(buffer);
++
++	if (dataType == DT_VOICE_LC_HEADER)
++		LogMessage("Private call: converted TG %u to private call", data.getDstId());
++}
++
+ CDMRGateway::CDMRGateway(const std::string& confFile) :
+ m_conf(confFile),
+ m_status(NULL),
+@@ -718,6 +762,14 @@
+ 				unsigned int dstId  = data.getDstId();
+ 				FLCO flco           = data.getFLCO();
+ 
++				// Private-call conversion for service TGs (e.g. BrandMeister
++				// Parrot 9990): the DVSwitch chain cannot emit private-call
++				// frames, so convert here before the rewrite rules are tried.
++				if (flco == FLCO_GROUP && isPrivateCallTG(dstId)) {
++					convertToPrivateCall(data);
++					flco = data.getFLCO();
++				}
++
+ 				bool trace = false;
+ 				if (ruleTrace && (srcId != rfSrcId[slotNo] || dstId != rfDstId[slotNo])) {
+ 					rfSrcId[slotNo] = srcId;
