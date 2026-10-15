@@ -1,0 +1,34 @@
+diff --git a/DMRGateway.cpp b/DMRGateway.cpp
+--- a/DMRGateway.cpp
++++ b/DMRGateway.cpp
+@@ -215,2 +215,6 @@ m_remoteControl(NULL)
+ 	m_scanTunedTG[1U] = 0U;
+ 	m_scanTunedTG[2U] = 0U;
++	m_scanLoggedDst[1U] = 0U;
++	m_scanLoggedDst[2U] = 0U;
++	m_scanLoggedTuned[1U] = 0U;
++	m_scanLoggedTuned[2U] = 0U;
+@@ -2458,7 +2462,14 @@ void CDMRGateway::processScanRewrite(CDMRData& data)
+ 	unsigned int dstId = data.getDstId();
+ 	if (dstId == tunedTG)
+ 		return;  // Already matches, nothing to do.
+ 
+-	LogMessage("Scan rewrite: TG %u -> %u (slot %u)", dstId, tunedTG, slotNo);
++	// Log once per TG change instead of once per voice frame (~17/sec) so
++	// the journal stays readable while debugging the scan. The rewrite
++	// itself still runs on every frame.
++	if (dstId != m_scanLoggedDst[slotNo] || tunedTG != m_scanLoggedTuned[slotNo]) {
++		LogMessage("Scan rewrite: TG %u -> %u (slot %u)", dstId, tunedTG, slotNo);
++		m_scanLoggedDst[slotNo] = dstId;
++		m_scanLoggedTuned[slotNo] = tunedTG;
++	}
+ 
+ 	// 1:1 rewrite via the standard machinery so the embedded LC is updated
+diff --git a/DMRGateway.h b/DMRGateway.h
+--- a/DMRGateway.h
++++ b/DMRGateway.h
+@@ -134,2 +134,4 @@ private:
+ 	CRemoteControl*        m_remoteControl;
+ 	unsigned int           m_scanTunedTG[3U];
++	unsigned int           m_scanLoggedDst[3U];
++	unsigned int           m_scanLoggedTuned[3U];
