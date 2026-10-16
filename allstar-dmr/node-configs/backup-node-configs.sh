@@ -136,6 +136,11 @@ ls -dt "$BACKUP_DIR"/allstar.* 2>/dev/null | tail -n +6 | xargs -r rm -rf
 
 cd "$REPO"
 git add allstar-dmr/node-configs/backups/ 2>/dev/null || true
+# Auto-commit the backups (was missing - user had to manually commit)
+if ! git diff --cached --quiet 2>/dev/null; then
+  git commit -m "Node config backups $(date +%Y%m%d-%H%M%S)" 2>/dev/null || true
+  echo "  Committed backups to local git repo"
+fi
 
 echo ""
 echo "Backup complete: $BACKUP_DIR/*.$TIMESTAMP"
