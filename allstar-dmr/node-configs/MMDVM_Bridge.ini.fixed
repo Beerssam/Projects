@@ -54,15 +54,5 @@ GatewayPort=3200
 Debug=0
 [P25 Network]
 Enable=0
-LocalAddress=127.0.0.1
-LocalPort=32011
-GatewayAddress=127.0.0.1
-GatewayPort=32010
-Debug=0
 [NXDN Network]
 Enable=0
-LocalAddress=127.0.0.1
-LocalPort=14022
-GatewayAddress=127.0.0.1
-GatewayPort=14021
-Debug=0
