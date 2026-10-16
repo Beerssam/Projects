@@ -1,0 +1,101 @@
+; DMRGateway.ini -- KF0RIZ multi-mode DMR (BrandMeister + TGIF + KS-DMR)
+; Callsign: KF0RIZ | DMR ID: 3209686
+;
+; Written for current DMRGateway (github.com/g4klx/DMRGateway, built from
+; source -- it is NOT in the DVSwitch apt repo and NOT configured by the
+; dvs menu). See scripts/build-dmrgateway.sh.
+;
+; secret is ever committed to the repo.
+;
+; Local side -- VERIFIED against DMRGateway source (Conf.cpp) and the
+; distributed example ini, Oct 2026:
+;   [General] RptAddress/RptPort describe the MMDVM client (MMDVM_Bridge).
+;   DMRGateway binds LocalPort and accepts DMRD frames ONLY from RptPort.
+;   MMDVM_Bridge.ini [DMR Network] must therefore be:
+;       Address=127.0.0.1, Port=62031, Local=62032
+;   There is NO unnumbered [DMR Network] section in current DMRGateway --
+;   every [DMR Network N] is an upstream network. Do not add one.
+;
+; Dialing:
+;   Plain TGs (e.g. 91, 3104, 3120) -> BrandMeister (network 1)
+;   4-prefixed TGs (e.g. 4000777)   -> TGIF TG 777 (network 2)
+;   7003120                         -> KS-DMR TG 3120 Kansas Statewide, TS2 (network 3)
+;
+; Rewrite rules: each TGRewrite line auto-creates its inverse for return
+; traffic (verified in DMRGateway.cpp), so the 4-prefix works both ways with
+; no extra rules. No SrcRewrite: caller radio IDs pass through unmodified.
+
+[General]
+Id=3209686
+RptAddress=127.0.0.1
+RptPort=62032
+LocalAddress=127.0.0.1
+LocalPort=62031
+Timeout=10
+RuleTrace=0
+Daemon=0
+Debug=0
+
+[Log]
+DisplayLevel=1
+; DMRGateway logs to stdout/stderr; under systemd, read with:
+;   sudo journalctl -u dmrgateway -f
+
+[Info]
+Callsign=KF0RIZ
+Location=Arizona
+Description=KF0RIZ AllStar DVSwitch multi-mode DMR gateway
+
+; --- Network 1: BrandMeister via 3103 San Jose (closest US master to Arizona) ---
+[DMR Network 1]
+Enabled=0
+Name=BM_3103
+Address=3103.repeater.net
+Port=62031
+Id=320968601
+TGRewrite1=1,1,1,1,999999
+TGRewrite2=2,1,2,1,999999
+PCRewrite1=1,9990,1,9990,1
+PCRewrite2=2,9990,2,9990,1
+Location=1
+Debug=0
+
+; --- Network 2: TGIF ---
+[DMR Network 2]
+Enabled=1
+Name=TGIF_Network
+Address=tgif.network
+Port=62031
+Id=320968602
+; 4000001-4999999 dialed on the AllStar side -> TGIF TGs 1-999999 (leading 4 stripped)
+; Range covers up to TG 9999999 on the network side: TGIF's TG 777 "scan" returns
+; traffic with the REAL talkgroup numbers (e.g. 8003120, 5029332, 5000777), and
+; DMRGateway drops network traffic that matches no rewrite rule -- so the range
+; must include those large TGs or the scan is silent on the AllStar side.
+TGRewrite1=1,4000001,1,1,999999
+TGRewrite2=2,4000001,2,1,999999
+Location=0
+Debug=0
+
+; --- Network 3: KS-DMR (standalone Kansas network, HBlink-based) ---
+; Sam's QTH is Shawnee KS, so the public hotspot entry is fair use.
+; NOTE: the public entry (vesta.k0usy.org) only carries TS2 / TG 3120
+; (Kansas Statewide). Dial 7003120 on TS2 to reach it.
+; Details published at http://www.k0usy.org/ks-dmr/ -- re-verify if it stops working.
+[DMR Network 3]
+Enabled=0
+Name=KSDMR
+Address=vesta.k0usy.org
+Port=62071
+Id=320968603
+Options=TS2=3120
+; Uniform 7-digit dialing: 7 + zero-padded 6-digit TG on TS2 -> KS-DMR.
+; e.g. dial 7003120 -> TG 3120 (Kansas Statewide). Leading 7 stripped:
+; 7000001-7999999 -> TGs 1-999999. Same shape as TGIF's 4-prefix (4000777).
+; NOTE: the public entry only carries TS2/TG 3120.
+TGRewrite1=2,7000001,2,1,999999
+Location=0
+Debug=0
+
+[XLX Network]
+Enabled=0
