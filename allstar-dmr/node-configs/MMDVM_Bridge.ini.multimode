@@ -80,7 +80,6 @@ Address=127.0.0.1
 Port=62031
 Jitter=360
 Local=62032
-Password=__SET_DMRGATEWAY_PASSWORD__
 Slot1=1
 Slot2=1
 Debug=0
