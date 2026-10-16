@@ -29,12 +29,6 @@ FileRoot=MMDVM_Bridge
 [System Fusion]
 Enable=1
 
-[P25]
-Enable=1
-
-[NXDN]
-Enable=1
-
 [DMR]
 Enable=1
 ColorCode=1
@@ -59,14 +53,14 @@ GatewayAddress=127.0.0.1
 GatewayPort=3200
 Debug=0
 [P25 Network]
-Enable=1
+Enable=0
 LocalAddress=127.0.0.1
 LocalPort=32011
 GatewayAddress=127.0.0.1
 GatewayPort=32010
 Debug=0
 [NXDN Network]
-Enable=1
+Enable=0
 LocalAddress=127.0.0.1
 LocalPort=14022
 GatewayAddress=127.0.0.1
