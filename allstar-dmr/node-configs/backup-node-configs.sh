@@ -88,6 +88,52 @@ for base in MMDVM_Bridge DVSwitch Analog_Bridge DMRGateway YSFGateway P25Gateway
   ls -t "$BACKUP_DIR/$base.ini."* 2>/dev/null | tail -n +11 | xargs -r rm -f
 done
 
+# --- Full AllStar backup (Sam's request: entire AllStar setup) ---
+echo ""
+echo "Backing up AllStar configs..."
+AST_BACKUP_DIR="$BACKUP_DIR/allstar.$TIMESTAMP"
+mkdir -p "$AST_BACKUP_DIR"
+
+# /etc/asterisk (AllStarLink configs: rpt.conf, extensions.conf, etc.)
+if [[ -d /etc/asterisk ]]; then
+  # Redact passwords from the copies
+  mkdir -p "$AST_BACKUP_DIR/etc-asterisk"
+  for f in /etc/asterisk/*.conf; do
+    [[ -f "$f" ]] || continue
+    base=$(basename "$f")
+    grep -v -i "password\|secret" "$f" > "$AST_BACKUP_DIR/etc-asterisk/$base" 2>/dev/null || \
+      cp "$f" "$AST_BACKUP_DIR/etc-asterisk/$base"
+  done
+  echo "  /etc/asterisk/*.conf (passwords redacted)"
+fi
+
+# AllStar node configs (if separate)
+if [[ -d /etc/allstar ]]; then
+  mkdir -p "$AST_BACKUP_DIR/etc-allstar"
+  cp -r /etc/allstar/* "$AST_BACKUP_DIR/etc-allstar/" 2>/dev/null || true
+  echo "  /etc/allstar/"
+fi
+
+# DVSwitch dashboard (our custom control panel)
+if [[ -f /var/www/html/dvswitch-control.html ]]; then
+  cp /var/www/html/dvswitch-control.html "$AST_BACKUP_DIR/" 2>/dev/null || true
+  echo "  dvswitch-control.html (dashboard)"
+fi
+if [[ -f /var/www/cgi-bin/dvswitch-control.sh ]]; then
+  cp /var/www/cgi-bin/dvswitch-control.sh "$AST_BACKUP_DIR/" 2>/dev/null || true
+  echo "  dvswitch-control.sh (CGI)"
+fi
+
+# Systemd service overrides (if any customizations)
+if [[ -d /etc/systemd/system/mmdvm_bridge.service.d ]]; then
+  mkdir -p "$AST_BACKUP_DIR/systemd"
+  cp -r /etc/systemd/system/mmdvm_bridge.service.d "$AST_BACKUP_DIR/systemd/" 2>/dev/null || true
+  echo "  systemd overrides"
+fi
+
+# Keep only last 5 full AllStar backups (they're larger)
+ls -dt "$BACKUP_DIR"/allstar.* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+
 cd "$REPO"
 git add allstar-dmr/node-configs/backups/ 2>/dev/null || true
 
