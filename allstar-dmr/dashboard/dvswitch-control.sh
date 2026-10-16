@@ -7,7 +7,10 @@
 #
 # Actions (via ?action=):
 #   status  -> JSON: mode, tune, tune_alias, services, scan_src, log
-#   tune    -> ?tgid=NNNN : run dvswitch.sh tune <tgid>
+#   tune    -> ?tgid=NNNN[&for_mode=YSF] : run dvswitch.sh tune <tgid>;
+#              for_mode declares which mode the value belongs to (the dashboard
+#              tune card knows); when it disagrees with the node's live mode
+#              the mode is switched first so the tune lands correctly.
 #   mode    -> ?mode=DMR|YSF|P25|NXDN|DSTAR : run dvswitch.sh mode <mode>
 #
 # Security: LAN-only by Apache config. No auth in script (matches existing
@@ -145,8 +148,9 @@ do_status() {
 }
 
 do_tune() {
-  local tgid tune_re mode tune_val
+  local tgid tune_re mode tune_val for_mode live_mode mode_switched waited
   tgid=$(get_param tgid)
+  for_mode=$(get_param for_mode)
   # Validate: 1-12 chars, alphanumeric/dash, spaces allowed after the first
   # char (reflector names like "M17-001 A" contain a space; DMR TGs are
   # numeric). The value is passed quoted to dvswitch.sh, so a space is safe.
@@ -158,16 +162,50 @@ do_tune() {
     printf '{"ok":false,"error":"Invalid tune value"}'
     return
   fi
+  # Optional intended mode, supplied by the dashboard's mode-specific tune
+  # card (it knows which mode its value belongs to). Allowlisted.
+  case "$for_mode" in
+    DMR|YSF|P25|NXDN|DSTAR|M17) ;;
+    "") ;;
+    *) printf '{"ok":false,"error":"Invalid for_mode"}'; return ;;
+  esac
   if [[ ! -x "$DVS_SWITCH" ]]; then
     printf '{"ok":false,"error":"dvswitch.sh not found"}'
     return
   fi
-  # YSF/FCS tune format (per DVSwitch forums, Steve N4IRS):
+  live_mode=$(current_mode)
+  mode_switched=false
+  if [[ -n "$for_mode" && "$for_mode" != "$live_mode" ]]; then
+    # The tune card's mode and the node's live mode disagree. The mode-button
+    # tap is async and a failed/lagging switch used to make the tune below
+    # silently land in the wrong mode (e.g. a YSF value tuned while the node
+    # was still in DMR). Switch first so the tune goes to the right place.
+    if ! sudo "$DVS_SWITCH" mode "$for_mode" >/dev/null 2>&1; then
+      printf '{"ok":false,"error":"mode switch to %s failed"}' "$for_mode"
+      return
+    fi
+    mode_switched=true
+    # Wait for the switch to take effect (Analog_Bridge reconfigures); fail
+    # loudly instead of tuning blindly into the wrong mode.
+    waited=0
+    while [[ "$(current_mode)" != "$for_mode" && $waited -lt 10 ]]; do
+      sleep 1; waited=$((waited+1))
+    done
+    if [[ "$(current_mode)" != "$for_mode" ]]; then
+      printf '{"ok":false,"error":"mode switch to %s did not take effect (node still reports %s)"}' \
+        "$for_mode" "$(current_mode)"
+      return
+    fi
+  fi
+  # Effective mode for value conversion: explicit intent wins, else live mode.
+  mode="${for_mode:-$live_mode}"
+  # YSF/FCS tune format -- documented DVSwitch convention (DVSwitch forum
+  # msg 1666362428180938016; ASL3 DTMF dialplan: [ysf] tune 8${EXTEN},
+  # [fcs] tune 9${EXTEN}):
   #   YSF reflector: prepend 8 (e.g., 41729 -> 841729)
   #   FCS room: prepend 9 (e.g., FCS00155 -> 900155)
   # The dashboard shows "FCS00155" but dvswitch.sh needs "900155".
   tune_val="$tgid"
-  mode=$(current_mode)
   if [[ "$mode" == "YSF" ]]; then
     if [[ "$tgid" =~ ^[Ff][Cc][Ss]([0-9]+)$ ]]; then
       # FCS00155 -> 900155
@@ -182,7 +220,8 @@ do_tune() {
   # TGs that require a real private call (BM Parrot 9990) are converted by
   # the DMRGateway private-call patch (scripts/dmrgateway-private-call.patch).
   if sudo "$DVS_SWITCH" tune "$tune_val" >/dev/null 2>&1; then
-    printf '{"ok":true,"tgid":"%s","tuned_as":"%s"}' "$tgid" "$tune_val"
+    printf '{"ok":true,"tgid":"%s","tuned_as":"%s","mode_switched":%s}' \
+      "$tgid" "$tune_val" "$mode_switched"
   else
     printf '{"ok":false,"error":"tune command failed"}'
   fi
@@ -310,10 +349,15 @@ do_reflectors() {
   else
     fcs_file=""
   fi
-  if [[ -z "$f" ]]; then
-    # No local host file -- try the DVRef API (cached 24h)
+  if [[ -z "$f" && -z "$fcs_file" ]]; then
+    # No local host file and no FCS file -- try the DVRef API (cached 24h)
     do_reflectors_web "$mode"
     return
+  fi
+  # If we have FCS but no YSF hosts file, use /dev/null for the YSF loop
+  # (the FCS append loop below will still run)
+  if [[ -z "$f" ]]; then
+    f="/dev/null"
   fi
   printf '{"ok":true,"reflectors":['
   # Per-mode data-line formats (verified against the live Pi-Star/dvref files):
