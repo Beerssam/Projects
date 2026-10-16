@@ -1,7 +1,7 @@
 ; MMDVM_Bridge.ini -- KF0RIZ multi-mode bridge
 ; Callsign: KF0RIZ | DMR ID: 3209686
 ; All digital modes: DMR, YSF, P25, NXDN, D-Star
-; Built from scratch Oct 16 2026 - replaces patched versions
+; Built from official DVSwitch example Oct 16 2026
 ;
 ; Gateway ports (verified from node backups Oct 15 2026):
 ;   DMRGateway:   127.0.0.1:62032 (RptPort), binds 62031
@@ -13,12 +13,7 @@
 Callsign=KF0RIZ
 Id=3209686
 Timeout=180
-Duplex=1
-ModeHang=10
-RFModeHang=10
-NetModeHang=3
-DisplayLevel=1
-Daemon=0
+Duplex=0
 
 [Info]
 RXFrequency=446000000
@@ -33,9 +28,27 @@ URL=https://github.com/Beerssam/Projects
 
 [Log]
 DisplayLevel=1
-FileLevel=1
+FileLevel=2
 FilePath=/var/log/mmdvm
 FileRoot=MMDVM_Bridge
+
+[DMR Id Lookup]
+File=/var/lib/mmdvm/DMRIds.dat
+Time=24
+
+[NXDN Id Lookup]
+File=/var/lib/mmdvm/NXDN.csv
+Time=24
+
+[Modem]
+Port=/dev/null
+RSSIMappingFile=/dev/null
+Trace=0
+Debug=0
+
+[D-Star]
+Enable=1
+Module=C
 
 [DMR]
 Enable=1
@@ -54,9 +67,12 @@ NAC=293
 Enable=1
 RAN=1
 
-[D-Star]
-Enable=1
-Module=C
+[D-Star Network]
+Enable=0
+GatewayAddress=127.0.0.1
+GatewayPort=20010
+LocalPort=20011
+Debug=0
 
 [DMR Network]
 Enable=1
@@ -91,12 +107,4 @@ LocalAddress=127.0.0.1
 LocalPort=14022
 GatewayAddress=127.0.0.1
 GatewayPort=14021
-Debug=0
-
-[D-Star Network]
-Enable=0
-GatewayAddress=127.0.0.1
-GatewayPort=20010
-LocalAddress=127.0.0.1
-LocalPort=20011
 Debug=0
