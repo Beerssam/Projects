@@ -1,0 +1,102 @@
+; MMDVM_Bridge.ini -- KF0RIZ multi-mode bridge
+; Callsign: KF0RIZ | DMR ID: 3209686
+; All digital modes: DMR, YSF, P25, NXDN, D-Star
+; Built from scratch Oct 16 2026 - replaces patched versions
+;
+; Gateway ports (verified from node backups Oct 15 2026):
+;   DMRGateway:   127.0.0.1:62032 (RptPort), binds 62031
+;   YSFGateway:   127.0.0.1:3200 (RptPort)
+;   P25Gateway:   127.0.0.1:32010 (RptPort)
+;   NXDNGateway:  127.0.0.1:14021 (RptPort)
+
+[General]
+Callsign=KF0RIZ
+Id=3209686
+Timeout=180
+Duplex=1
+ModeHang=10
+RFModeHang=10
+NetModeHang=3
+DisplayLevel=1
+Daemon=0
+
+[Info]
+RXFrequency=446000000
+TXFrequency=446000000
+Power=1
+Latitude=39.01
+Longitude=-94.77
+Height=0
+Location=Shawnee, KS
+Description=KF0RIZ Multi-Mode
+URL=https://github.com/Beerssam/Projects
+
+[Log]
+DisplayLevel=1
+FileLevel=1
+FilePath=/var/log/mmdvm
+FileRoot=MMDVM_Bridge
+
+[DMR]
+Enable=1
+ColorCode=1
+EmbeddedLCOnly=1
+DumpTAData=0
+
+[System Fusion]
+Enable=1
+
+[P25]
+Enable=1
+NAC=293
+
+[NXDN]
+Enable=1
+RAN=1
+
+[D-Star]
+Enable=1
+Module=C
+
+[DMR Network]
+Enable=1
+Address=127.0.0.1
+Port=62031
+Jitter=360
+Local=62032
+Password=__SET_DMRGATEWAY_PASSWORD__
+Slot1=1
+Slot2=1
+Debug=0
+
+[System Fusion Network]
+Enable=1
+LocalAddress=127.0.0.1
+LocalPort=3210
+GatewayAddress=127.0.0.1
+GatewayPort=3200
+Debug=0
+
+[P25 Network]
+Enable=0
+GatewayAddress=127.0.0.1
+GatewayPort=32010
+LocalAddress=127.0.0.1
+LocalPort=32011
+Debug=0
+
+[NXDN Network]
+Enable=0
+LocalAddress=127.0.0.1
+LocalPort=14022
+GatewayAddress=127.0.0.1
+GatewayPort=14021
+Debug=0
+
+[D-Star Network]
+Enable=0
+GatewayAddress=127.0.0.1
+GatewayPort=20010
+LocalAddress=127.0.0.1
+LocalPort=20011
+Debug=0
