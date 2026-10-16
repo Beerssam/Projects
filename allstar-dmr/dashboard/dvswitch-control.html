@@ -241,12 +241,23 @@ function loadReflectors(mode, selectEl) {
 
 const CGI = "/cgi-bin/dvswitch-control.sh";
 
-function api(action, params = {}) {
+function api(action, params = {}, timeoutMs = 10000) {
   const q = new URLSearchParams({ action, ...params });
-  return fetch(`${CGI}?${q}`).then(r => r.json());
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(`${CGI}?${q}`, { signal: controller.signal })
+    .then(r => {
+      clearTimeout(timeout);
+      return r.json();
+    })
+    .catch(e => {
+      clearTimeout(timeout);
+      throw e;
+    });
 }
 
 let selectedNet = "bm"; // Default to BrandMeister
+let cardMode = null; // Mode of the currently shown mode-specific tune card
 
 function buildPresets() {
   const grid = document.getElementById("preset-grid");
@@ -283,7 +294,9 @@ function tune(tgid) {
   document.querySelectorAll(".preset-btn").forEach(b => {
     b.classList.toggle("current", b.dataset.tgid === tgid);
   });
-  api("tune", { tgid }).then(r => {
+  // DMR presets always belong to DMR mode; send for_mode so the CGI
+  // switches if the node is in a different mode (prevents silent wrong-mode tune)
+  api("tune", { tgid, for_mode: "DMR" }).then(r => {
     if (r.ok) {
       document.getElementById("current-desc").textContent = "Tuned (hit Refresh Status to verify)";
     } else {
@@ -308,8 +321,10 @@ function setMode(mode) {
   
   if (mode === "DMR") {
     modeTuneCard.classList.add("hidden");
+    cardMode = null;
   } else {
     modeTuneCard.classList.remove("hidden");
+    cardMode = mode;
     const configs = {
       "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list or enter reflector ID" },
       "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
@@ -334,7 +349,13 @@ function setMode(mode) {
   api("mode", { mode }).then(r => {
     if (!r.ok) {
       document.getElementById("current-desc").textContent = "Mode change failed: " + (r.error || "unknown");
+      // Revert button highlighting on failure (was optimistically updated above)
+      refreshStatus();
     }
+  }).catch(e => {
+    document.getElementById("current-desc").textContent = "Mode change error: " + e.message;
+    // Revert button highlighting on error
+    refreshStatus();
   });
 }
 
@@ -344,9 +365,12 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   const val = input.value.trim();
   if (!val) return;
   document.getElementById("current-desc").textContent = "Tuning...";
-  api("tune", { tgid: val }).then(r => {
+  // for_mode tells the CGI which mode this value belongs to, so the tune
+  // can't silently land in the wrong mode if the mode switch lagged/failed.
+  api("tune", { tgid: val, for_mode: cardMode || "" }).then(r => {
     if (r.ok) {
-      document.getElementById("current-desc").textContent = "Tuned to " + val + " (hit Refresh Status to verify)";
+      const switched = r.mode_switched ? `Switched to ${cardMode} + tuned to ` : "Tuned to ";
+      document.getElementById("current-desc").textContent = switched + val + " (hit Refresh Status to verify)";
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
     }
