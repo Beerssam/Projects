@@ -5,11 +5,13 @@
 #   sudo bash allstar-dmr/dashboard/install.sh
 #
 # What it does:
-#   1. Backs up any existing control page / CGI.
+#   1. Backs up any existing control page / CGI / mode-switch helper.
 #   2. Copies dvswitch-control.html to the Apache web root.
-#   3. Copies dvswitch-control.sh to the CGI bin and makes it executable.
+#   3. Copies dvswitch-control.sh and mode-switch.sh to the CGI bin and makes
+#      them executable.
 #   4. Ensures Apache CGI is enabled and reloads Apache.
-#   5. Adds a sudoers rule so the CGI can run dvswitch.sh without a password.
+#   5. Adds a sudoers rule so the CGI can run dvswitch.sh (tune/mode) and the
+#      mode-switch helper without a password.
 #
 # The panel is then at: http://<node-ip>/dvswitch-control.html
 set -euo pipefail
@@ -19,9 +21,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HTML_SRC="$SCRIPT_DIR/dvswitch-control.html"
 CGI_SRC="$SCRIPT_DIR/dvswitch-control.sh"
+HELPER_SRC="$SCRIPT_DIR/mode-switch.sh"
 
 [[ -f "$HTML_SRC" ]] || { echo "Missing: $HTML_SRC" >&2; exit 1; }
 [[ -f "$CGI_SRC" ]] || { echo "Missing: $CGI_SRC" >&2; exit 1; }
+[[ -f "$HELPER_SRC" ]] || { echo "Missing: $HELPER_SRC" >&2; exit 1; }
 
 # Find Apache web root. The CGI dir is ALWAYS /var/www/cgi-bin because that is
 # what the Apache conf below (ScriptAlias /cgi-bin/ /var/www/cgi-bin/) serves.
@@ -50,18 +54,25 @@ if [[ -f "$CGI_DIR/dvswitch-control.sh" ]]; then
   cp "$CGI_DIR/dvswitch-control.sh" "$CGI_DIR/dvswitch-control.sh.bak.$TS"
   echo "== Backed up existing CGI"
 fi
+if [[ -f "$CGI_DIR/mode-switch.sh" ]]; then
+  cp "$CGI_DIR/mode-switch.sh" "$CGI_DIR/mode-switch.sh.bak.$TS"
+  echo "== Backed up existing mode-switch helper"
+fi
 
 # Install
 cp "$HTML_SRC" "$WEB_ROOT/dvswitch-control.html"
 cp "$CGI_SRC" "$CGI_DIR/dvswitch-control.sh"
-chmod 755 "$CGI_DIR/dvswitch-control.sh"
-# Remove a stale copy from the old (wrong) location if it exists there, so a
-# future reader doesn't mistake it for the live one.
-if [[ -f /usr/lib/cgi-bin/dvswitch-control.sh && "$CGI_DIR" != "/usr/lib/cgi-bin" ]]; then
-  rm -f /usr/lib/cgi-bin/dvswitch-control.sh
-  echo "== Removed stale CGI from /usr/lib/cgi-bin"
-fi
-echo "== Installed HTML and CGI"
+cp "$HELPER_SRC" "$CGI_DIR/mode-switch.sh"
+chmod 755 "$CGI_DIR/dvswitch-control.sh" "$CGI_DIR/mode-switch.sh"
+# Remove stale copies from the old (wrong) location if they exist there, so a
+# future reader doesn't mistake them for the live ones.
+for stale in dvswitch-control.sh mode-switch.sh; do
+  if [[ -f /usr/lib/cgi-bin/$stale && "$CGI_DIR" != "/usr/lib/cgi-bin" ]]; then
+    rm -f "/usr/lib/cgi-bin/$stale"
+    echo "== Removed stale $stale from /usr/lib/cgi-bin"
+  fi
+done
+echo "== Installed HTML, CGI and mode-switch helper"
 
 # Apache CGI config (if not already present)
 if ! grep -q "dvswitch-control" /etc/apache2/conf-enabled/*.conf 2>/dev/null; then
@@ -77,17 +88,18 @@ EOF
   echo "== Added Apache CGI config"
 fi
 
-# Sudoers: let www-data run dvswitch.sh tune/mode without password
+# Sudoers: let www-data run dvswitch.sh tune/mode and the mode-switch helper
+# without password. Rewritten on every install so reinstalls pick up the
+# helper even if the rule predates it.
 SUDOERS_FILE="/etc/sudoers.d/dvswitch-control"
-if [[ ! -f "$SUDOERS_FILE" ]]; then
-  DVS=$(find /opt /usr/local -name "dvswitch.sh" 2>/dev/null | head -1)
-  if [[ -n "$DVS" ]]; then
-    printf 'www-data ALL=(ALL) NOPASSWD: %s tune *, %s mode *\n' "$DVS" "$DVS" > "$SUDOERS_FILE"
-    chmod 440 "$SUDOERS_FILE"
-    echo "== Added sudoers rule for www-data -> $DVS"
-  else
-    echo "!! dvswitch.sh not found; sudoers rule skipped (tune/mode will fail)" >&2
-  fi
+DVS=$(find /opt /usr/local -name "dvswitch.sh" 2>/dev/null | head -1)
+if [[ -n "$DVS" ]]; then
+  printf 'www-data ALL=(ALL) NOPASSWD: %s tune *, %s mode *, %s/mode-switch.sh *\n' \
+    "$DVS" "$DVS" "$CGI_DIR" > "$SUDOERS_FILE"
+  chmod 440 "$SUDOERS_FILE"
+  echo "== Wrote sudoers rule for www-data -> dvswitch.sh + mode-switch.sh"
+else
+  echo "!! dvswitch.sh not found; sudoers rule skipped (tune/mode will fail)" >&2
 fi
 
 # Reload Apache
