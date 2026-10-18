@@ -11,7 +11,9 @@
 #              for_mode declares which mode the value belongs to (the dashboard
 #              tune card knows); when it disagrees with the node's live mode
 #              the mode is switched first so the tune lands correctly.
-#   mode    -> ?mode=DMR|YSF|P25|NXDN|DSTAR : run dvswitch.sh mode <mode>
+#   mode    -> ?mode=DMR|YSF|P25|NXDN|DSTAR : mode-switch.sh (fixes Analog_Bridge
+#              [AMBE_AUDIO] TLV ports for the target mode from DVSwitch.ini,
+#              then runs dvswitch.sh mode <mode>)
 #
 # Security: LAN-only by Apache config. No auth in script (matches existing
 # DVSwitch dashboard posture). All inputs are validated against allowlists.
@@ -19,6 +21,12 @@
 DVS_SWITCH="/opt/MMDVM_Bridge/dvswitch.sh"
 ANALOG_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 DMR_INI="/opt/DMRGateway/DMRGateway.ini"
+# Privileged mode-switch helper (installed beside this CGI by install.sh).
+# Fixes Analog_Bridge's [AMBE_AUDIO] TLV ports for the target mode before
+# dvswitch.sh runs -- dvswitch.sh leaves them on the previous mode's values,
+# which silently breaks the Analog_Bridge -> MMDVM_Bridge handoff.
+MODE_SWITCH="$(dirname "$0" 2>/dev/null)/mode-switch.sh"
+[[ -x "$MODE_SWITCH" ]] || MODE_SWITCH="/var/www/cgi-bin/mode-switch.sh"
 
 # --- helpers ---
 json_escape() {
@@ -180,7 +188,9 @@ do_tune() {
     # tap is async and a failed/lagging switch used to make the tune below
     # silently land in the wrong mode (e.g. a YSF value tuned while the node
     # was still in DMR). Switch first so the tune goes to the right place.
-    if ! sudo "$DVS_SWITCH" mode "$for_mode" >/dev/null 2>&1; then
+    # switch_mode also repairs Analog_Bridge's TLV ports for the target mode
+    # (dvswitch.sh alone leaves them stale -- the Oct 16 YSF outage).
+    if ! switch_mode "$for_mode"; then
       printf '{"ok":false,"error":"mode switch to %s failed"}' "$for_mode"
       return
     fi
@@ -227,8 +237,39 @@ do_tune() {
   fi
 }
 
+switch_mode() {
+  # $1 = mode (already allowlisted by the caller). Runs the privileged
+  # mode-switch helper (TLV port fix + dvswitch.sh mode); falls back to plain
+  # dvswitch.sh if the helper isn't installed yet OR sudo rejects it (stale
+  # sudoers from before the helper existed). Returns 0 on success.
+  # Sets SWITCH_TLV_FIXED (1/0) and SWITCH_TLV_NOTE for the JSON response.
+  local mode="$1" out rc k v
+  SWITCH_TLV_FIXED=0; SWITCH_TLV_NOTE=""
+  if [[ -x "$MODE_SWITCH" ]]; then
+    out=$(sudo "$MODE_SWITCH" "$mode" 2>/dev/null); rc=$?
+    if [[ $rc -ne 0 && -z "$out" ]]; then
+      # Helper always prints fixed=/note= lines, even on failure -- empty
+      # output means sudo itself refused (stale sudoers). Legacy path keeps
+      # mode switching working until install.sh is re-run.
+      sudo "$DVS_SWITCH" mode "$mode" >/dev/null 2>&1; rc=$?
+      SWITCH_TLV_NOTE="mode-switch helper not permitted by sudoers; TLV ports not verified (re-run install.sh)"
+      return "$rc"
+    fi
+    while IFS='=' read -r k v; do
+      case "$k" in
+        fixed) SWITCH_TLV_FIXED="$v" ;;
+        note)  SWITCH_TLV_NOTE="$v" ;;
+      esac
+    done <<< "$out"
+  else
+    sudo "$DVS_SWITCH" mode "$mode" >/dev/null 2>&1; rc=$?
+    SWITCH_TLV_NOTE="mode-switch helper not installed; TLV ports not verified"
+  fi
+  return "$rc"
+}
+
 do_mode() {
-  local mode
+  local mode tlv_fixed
   mode=$(get_param mode)
   case "$mode" in
     DMR|YSF|P25|NXDN|DSTAR|M17) ;;
@@ -238,8 +279,12 @@ do_mode() {
     printf '{"ok":false,"error":"dvswitch.sh not found"}'
     return
   fi
-  if sudo "$DVS_SWITCH" mode "$mode" >/dev/null 2>&1; then
-    printf '{"ok":true,"mode":"%s"}' "$mode"
+  if switch_mode "$mode"; then
+    tlv_fixed=false
+    [[ "$SWITCH_TLV_FIXED" == "1" ]] && tlv_fixed=true
+    printf '{"ok":true,"mode":"%s","tlv_fixed":%s' "$mode" "$tlv_fixed"
+    [[ -n "$SWITCH_TLV_NOTE" ]] && printf ',"tlv_note":"%s"' "$(json_escape "$SWITCH_TLV_NOTE")"
+    printf '}'
   else
     printf '{"ok":false,"error":"mode command failed"}'
   fi
