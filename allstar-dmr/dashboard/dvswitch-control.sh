@@ -325,7 +325,8 @@ find_hostfile() {
 do_reflectors_web() {
   # $1 = mode (lowercase). Fetch from DVRef API, cache 24h in /tmp.
   # Returns JSON list or empty list on failure.
-  local mode="$1" cache="/tmp/dvswitch-reflectors-${mode}.json" url json
+  local mode="$1" url json
+  local cache="/tmp/dvswitch-reflectors-${mode}.json"
   # Serve from cache if fresh (<24h)
   if [[ -f "$cache" ]] && [[ $(($(date +%s) - $(stat -c %Y "$cache" 2>/dev/null || echo 0))) -lt 86400 ]]; then
     json=$(cat "$cache" 2>/dev/null)
@@ -334,19 +335,25 @@ do_reflectors_web() {
       return
     fi
   fi
-  # DVRef API endpoints (from Pi-Star host file headers)
+  # DVRef API endpoints (https://dvref.com/api/v2/ -- reflector lists are at
+  # /api/v2/{mode}/reflectors/; the M17 list lives under the "mrefd" group,
+  # NOT "m17"). Anonymous access requires X-DVRef-Callsign plus
+  # X-DVRef-Contact as a valid email address or http(s) URL -- a bare
+  # callsign is rejected with HTTP 400. Rate limit: 1 request per source IP
+  # every 6 hours per resource, hence the 24h local cache above.
   case "$mode" in
     ysf)  url="https://dvref.com/api/v2/ysf/reflectors/" ;;
     p25)  url="https://dvref.com/api/v2/p25/reflectors/" ;;
     nxdn) url="https://dvref.com/api/v2/nxdn/reflectors/" ;;
-    m17)  url="https://dvref.com/api/v2/m17/reflectors/" ;;
+    m17)  url="https://dvref.com/api/v2/mrefd/reflectors/" ;;
     *) printf '{"ok":true,"reflectors":[]}'; return ;;
   esac
   # Fetch with callsign headers (required by DVRef)
   json=$(curl -s --max-time 15 -H "X-DVRef-Callsign: KF0RIZ" \
-    -H "X-DVRef-Contact: KF0RIZ" "$url" 2>/dev/null | \
+    -H "X-DVRef-Contact: https://github.com/Beerssam/Projects" "$url" 2>/dev/null | \
     python3 -c '
 import json,sys
+mode = sys.argv[1] if len(sys.argv) > 1 else ""
 try:
   d = json.load(sys.stdin)
   refs = d.get("data", {}).get("reflectors", [])
@@ -354,12 +361,17 @@ try:
   for r in refs[:300]:
     rid = str(r.get("designator", ""))
     name = r.get("name") or r.get("slug") or rid
-    if rid:
-      out.append({"id": rid, "name": name})
+    if not rid:
+      continue
+    # Dashboard convention: M17 reflector ids are "M17-<designator>"
+    # (matches the hardcoded list and the "e.g. M17-M17" placeholder).
+    if mode == "m17" and not rid.upper().startswith("M17"):
+      rid = "M17-" + rid
+    out.append({"id": rid, "name": name})
   print(json.dumps(out))
 except Exception:
   print("[]")
-' 2>/dev/null)
+' "$mode" 2>/dev/null)
   if [[ -n "$json" && "$json" != "[]" ]]; then
     printf '%s' "$json" > "$cache" 2>/dev/null
     printf '{"ok":true,"reflectors":%s,"source":"dvref"}' "$json"
