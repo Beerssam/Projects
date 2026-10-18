@@ -111,9 +111,33 @@ set_ambe_port txPort "$want_tx"
 set_ambe_port rxPort "$want_rx"
 
 # --- 2. Run the mode switch (dvswitch.sh restarts the bridge chain) ---
-if ! "$DVS_SWITCH" mode "$MODE" >/dev/null 2>&1; then
+dvs_out=$("$DVS_SWITCH" mode "$MODE" 2>&1)
+dvs_rc=$?
+if [[ $dvs_rc -ne 0 ]]; then
   echo "fixed=1"
-  echo "note=Analog_Bridge TLV ports set for $MODE but dvswitch.sh mode failed"
+  echo "note=Analog_Bridge TLV ports set for $MODE but dvswitch.sh mode failed: $dvs_out"
+  exit 1
+fi
+
+# --- 2b. Verify the codec actually switched (wait for Analog_Bridge restart) ---
+# dvswitch.sh can exit 0 without the codec changing (e.g. ABInfo stale).
+# Expected ambe_mode per target: DMR->DMR, YSF->YSFN, P25->P25, NXDN->NXDN,
+# DSTAR->DSTAR. M17 has no TLV section so we never reach here for M17.
+expected_mode="$MODE"
+[[ "$MODE" == "YSF" ]] && expected_mode="YSFN"
+abinfo_now=""
+for _ in 1 2 3 4 5 6; do
+  sleep 2
+  abinfo_now=$(ls -t /tmp/ABInfo_*.json 2>/dev/null | head -1)
+  [[ -n "$abinfo_now" ]] || continue
+  cur_mode=$(python3 -c "import json,sys; print(json.load(open('$abinfo_now')).get('tlv',{}).get('ambe_mode',''))" 2>/dev/null)
+  [[ "$cur_mode" == "$expected_mode" ]] && break
+  cur_mode=""
+done
+if [[ -z "${cur_mode:-}" ]]; then
+  got=$(python3 -c "import json,sys; print(json.load(open('$abinfo_now')).get('tlv',{}).get('ambe_mode','?'))" 2>/dev/null || echo "?")
+  echo "fixed=1"
+  echo "note=TLV ports set for $MODE but codec still '$got' (expected '$expected_mode'); dvswitch.sh mode may not have taken"
   exit 1
 fi
 
