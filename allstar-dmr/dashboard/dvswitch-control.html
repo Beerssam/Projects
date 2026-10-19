@@ -168,6 +168,30 @@
 </div>
 
 <div class="card">
+  <h2>Audio Levels</h2>
+  <div style="margin-bottom: 12px;">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+      <span style="font-size: 0.9em; color: #94a3b8;">TX to Digital (tlvGain)</span>
+      <span id="tlv-val" style="font-weight: 600; color: #38bdf8;">...</span>
+    </div>
+    <input type="range" id="tlv-slider" min="0" max="2" step="0.05" value="1"
+           style="width: 100%;" oninput="updateGainLabel('tlv')"
+           onchange="setGain('tlv', this.value)">
+    <div style="font-size: 0.75em; color: #64748b; margin-top: 2px;">Your voice → DMR/YSF. Lower if reports say hot/distorted.</div>
+  </div>
+  <div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+      <span style="font-size: 0.9em; color: #94a3b8;">RX from Digital (usrpGain)</span>
+      <span id="usrp-val" style="font-weight: 600; color: #38bdf8;">...</span>
+    </div>
+    <input type="range" id="usrp-slider" min="0" max="5" step="0.1" value="1"
+           style="width: 100%;" oninput="updateGainLabel('usrp')"
+           onchange="setGain('usrp', this.value)">
+    <div style="font-size: 0.75em; color: #64748b; margin-top: 2px;">Digital → your radio. Raise if digital sounds quiet.</div>
+  </div>
+</div>
+
+<div class="card">
   <h2>Recent DMR Activity</h2>
   <div class="log-box" id="log-box">Loading...</div>
   <button class="refresh-btn" onclick="refreshStatus()">Refresh</button>
@@ -379,6 +403,36 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   });
 });
 
+function updateGainLabel(which) {
+  const slider = document.getElementById(which + "-slider");
+  document.getElementById(which + "-val").textContent = parseFloat(slider.value).toFixed(2);
+}
+
+function setGain(which, value) {
+  const v = parseFloat(value).toFixed(2);
+  document.getElementById(which + "-val").textContent = v;
+  fetch(`cgi-bin/dvswitch-control.sh?action=gain&${which}=${v}`)
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) alert("Gain update failed: " + (d.error || "unknown"));
+    })
+    .catch(e => alert("Gain update error: " + e.message));
+}
+
+function loadGains() {
+  fetch("cgi-bin/dvswitch-control.sh?action=gain")
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        document.getElementById("tlv-slider").value = d.tlv;
+        document.getElementById("tlv-val").textContent = parseFloat(d.tlv).toFixed(2);
+        document.getElementById("usrp-slider").value = d.usrp;
+        document.getElementById("usrp-val").textContent = parseFloat(d.usrp).toFixed(2);
+      }
+    })
+    .catch(() => {});
+}
+
 function refreshStatus() {
   api("status").then(r => {
     // Current tune
@@ -497,6 +551,7 @@ document.querySelectorAll(".net-btn").forEach(b => {
 
 buildPresets();
 refreshStatus();
+loadGains();
 setInterval(refreshStatus, 15000);
 </script>
 </body>
