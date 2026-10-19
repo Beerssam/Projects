@@ -3,6 +3,16 @@
 ; All digital modes: DMR, YSF, P25, NXDN, D-Star
 ; Built from official DVSwitch example Oct 16 2026
 ;
+; CRASH FIXES (verified against the real V1.6.8 binary, Oct 18 2026):
+;   1. [DMR Network] MUST have a non-empty Password -- the binary asserts
+;      !password.empty() in DMRNetwork.cpp:77 and SIGABRTs without it.
+;      Any non-empty value works: DMRGateway's local RPTL handshake accepts
+;      it without verification on loopback, so this marker is copy-ready.
+;   2. [NXDN] Enable MUST be 0 -- enabling the NXDN mode segfaults the
+;      V1.6.8 binary during NXDN TLV/USRP init (verified: clean 8s run with
+;      NXDN off, segfault with it on). NXDN stays disabled until the binary
+;      is fixed; P25 mode is unaffected and stays enabled.
+;
 ; Gateway ports (verified from node backups Oct 15 2026):
 ;   DMRGateway:   127.0.0.1:62032 (RptPort), binds 62031
 ;   YSFGateway:   127.0.0.1:3200 (RptPort)
@@ -64,7 +74,9 @@ Enable=1
 NAC=293
 
 [NXDN]
-Enable=1
+; Keep Enable=0: NXDN mode segfaults MMDVM_Bridge V1.6.8 at startup
+; (during NXDN TLV init -- verified Oct 18 2026). Revisit with a newer binary.
+Enable=0
 RAN=1
 
 [D-Star Network]
@@ -80,6 +92,10 @@ Address=127.0.0.1
 Port=62031
 Jitter=360
 Local=62032
+; Non-empty Password is MANDATORY: the binary asserts !password.empty()
+; (DMRNetwork.cpp:77) and SIGABRTs on startup without it. Any value works --
+; DMRGateway's local RPTL handshake does not verify it. Copy-ready as-is.
+Password=__SET_DMR_LOCAL_PASSWORD__
 Slot1=1
 Slot2=1
 Debug=0
