@@ -290,6 +290,51 @@ do_mode() {
   fi
 }
 
+do_gain() {
+  # ?action=gain -> {"tlv":"0.25","usrp":"4.00"}
+  # ?action=gain&tlv=0.50 -> set tlvGain, restart analog_bridge
+  # ?action=gain&usrp=3.00 -> set usrpGain, restart analog_bridge
+  local tlv usrp cur_tlv cur_usrp
+  tlv=$(get_param tlv)
+  usrp=$(get_param usrp)
+
+  # Read current values
+  cur_tlv=$(grep -iE "^tlvGain" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
+  cur_usrp=$(grep -iE "^usrpGain" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
+  [[ -z "$cur_tlv" ]] && cur_tlv="1.00"
+  [[ -z "$cur_usrp" ]] && cur_usrp="1.00"
+
+  # If setting a value, validate and apply
+  if [[ -n "$tlv" ]]; then
+    if ! [[ "$tlv" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      printf '{"ok":false,"error":"Invalid tlv gain"}'; return
+    fi
+    # Validate range 0.0 to 5.0
+    if ! python3 -c "v=float('$tlv'); exit(0 if 0.0 <= v <= 5.0 else 1)" 2>/dev/null; then
+      printf '{"ok":false,"error":"Gain must be 0.0-5.0"}'; return
+    fi
+    sudo sed -i "s/^tlvGain *=.*/tlvGain = $tlv/" "$ANALOG_INI" 2>/dev/null || \
+      printf '\ntlvGain = %s\n' "$tlv" | sudo tee -a "$ANALOG_INI" >/dev/null
+    sudo systemctl restart analog_bridge 2>/dev/null
+    cur_tlv="$tlv"
+  fi
+
+  if [[ -n "$usrp" ]]; then
+    if ! [[ "$usrp" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+      printf '{"ok":false,"error":"Invalid usrp gain"}'; return
+    fi
+    if ! python3 -c "v=float('$usrp'); exit(0 if 0.0 <= v <= 5.0 else 1)" 2>/dev/null; then
+      printf '{"ok":false,"error":"Gain must be 0.0-5.0"}'; return
+    fi
+    sudo sed -i "s/^usrpGain *=.*/usrpGain = $usrp/" "$ANALOG_INI" 2>/dev/null || \
+      printf '\nusrpGain = %s\n' "$usrp" | sudo tee -a "$ANALOG_INI" >/dev/null
+    sudo systemctl restart analog_bridge 2>/dev/null
+    cur_usrp="$usrp"
+  fi
+
+  printf '{"ok":true,"tlv":"%s","usrp":"%s"}' "$cur_tlv" "$cur_usrp"
+}
+
 find_hostfile() {
   # $1 = keyword (lowercase, e.g. "p25"); remaining args = exact basenames to
   # try first (e.g. P25Hosts.txt P25_Hosts.txt).
@@ -487,5 +532,6 @@ case "$action" in
   tune)       do_tune ;;
   mode)       do_mode ;;
   reflectors) do_reflectors ;;
+  gain)       do_gain ;;
   *)          printf '{"ok":false,"error":"Unknown action"}' ;;
 esac
