@@ -159,6 +159,11 @@ do_tune() {
   local tgid tune_re mode tune_val for_mode live_mode mode_switched waited
   tgid=$(get_param tgid)
   for_mode=$(get_param for_mode)
+  # from_list=1 means the dashboard value came from the reflector dropdown
+  # (not typed manually). Only dropdown values get the YSF 8/9 prefix below;
+  # a manually typed value tunes verbatim (Sam's Oct 19 correction: typing
+  # 99999 must tune 99999, not be auto-converted to 899999).
+  from_list=$(get_param from_list)
   # Validate: 1-12 chars, alphanumeric/dash, spaces allowed after the first
   # char (reflector names like "M17-001 A" contain a space; DMR TGs are
   # numeric). The value is passed quoted to dvswitch.sh, so a space is safe.
@@ -215,8 +220,10 @@ do_tune() {
   #   YSF reflector: prepend 8 (e.g., 41729 -> 841729)
   #   FCS room: prepend 9 (e.g., FCS00155 -> 900155)
   # The dashboard shows "FCS00155" but dvswitch.sh needs "900155".
+  # Applies ONLY to values picked from the reflector dropdown (from_list=1);
+  # manually typed values pass through unchanged.
   tune_val="$tgid"
-  if [[ "$mode" == "YSF" ]]; then
+  if [[ "$mode" == "YSF" && "$from_list" == "1" ]]; then
     if [[ "$tgid" =~ ^[Ff][Cc][Ss]([0-9]+)$ ]]; then
       # FCS00155 -> 900155
       tune_val="9${BASH_REMATCH[1]}"
