@@ -9,6 +9,13 @@
 # builds it, and installs the binary to /usr/local/bin/DMRGateway.
 set -euo pipefail
 
+# Patch set applied by this script, in order (Oct 19 2026):
+#   1. dmrgateway-rptl-login.patch      (Oct 13: MMDVM_Bridge RPTL handshake)
+#   2. dmrgateway-scan-rewrite.patch    (Oct 13: TGIF scan TG rewrite)
+#   3. dmrgateway-scan-logchange.patch  (Oct 14: scan log throttling)
+#   4. dmrgateway-private-call.patch    (Oct 15: 9990 group->private conversion)
+#   5. dmrgateway-rptc-passthrough.patch (Oct 19: BM RPTC passthrough)
+
 [[ $EUID -eq 0 ]] || { echo "Run as root (sudo)." >&2; exit 1; }
 
 echo "== installing build dependencies"
@@ -41,6 +48,7 @@ RPTL_PATCH="$SCRIPT_DIR/dmrgateway-rptl-login.patch"
 SCAN_PATCH="$SCRIPT_DIR/dmrgateway-scan-rewrite.patch"
 LOGCHANGE_PATCH="$SCRIPT_DIR/dmrgateway-scan-logchange.patch"
 PRIVATECALL_PATCH="$SCRIPT_DIR/dmrgateway-private-call.patch"
+RPTC_PATCH="$SCRIPT_DIR/dmrgateway-rptc-passthrough.patch"
 if [[ -d "$SRC/.git" ]]; then
   echo "== updating existing source in $SRC"
   git -C "$SRC" fetch
@@ -96,6 +104,54 @@ else
   echo "== applying private-call patch"
   [[ -f "$PRIVATECALL_PATCH" ]] || { echo "Patch file missing: $PRIVATECALL_PATCH" >&2; exit 1; }
   patch -p1 < "$PRIVATECALL_PATCH"
+fi
+
+# (Oct 19-20 2026): BrandMeister fix. DMRGateway rebuilt the RPTC config
+# message by hand in CDMRGateway::getConfig(), reading the tail fields
+# (flags byte, software name/version, package ID) from wrong offsets of the
+# MMDVM_Bridge RPTC payload (MMDVM_Bridge formats latitude without a '+'
+# sign, so the sprintf layout grabbed garbage there). TGIF/KS-DMR ignore
+# those fields; BrandMeister validates them and rejected the login ~50ms
+# after the RPTC ("Login to the master has failed"). A direct
+# MMDVM_Bridge->BM connection proved the MMDVM's own 294-byte RPTC is
+# accepted, so getConfig() now passes it through verbatim.
+# Primary vehicle is scripts/dmrgateway-rptc-passthrough.patch (repo
+# convention); the python fallback below covers the case where the patch
+# context ever drifts from the pinned commit. Both are idempotent via the
+# same marker comment. Kept last: it touches nothing the patches above
+# depend on.
+PASSTHROUGH_PATCH="$SCRIPT_DIR/dmrgateway-rptc-passthrough.patch"
+PASSTHROUGH_PY="$SCRIPT_DIR/dmrgateway-rptl-passthrough.py"
+if grep -q 'RPTL/DVSwitch fix: pass the MMDVM' DMRGateway.cpp 2>/dev/null; then
+  echo "== RPTC passthrough already applied, skipping"
+elif [[ -f "$PASSTHROUGH_PATCH" ]] && patch -p1 --dry-run --silent < "$PASSTHROUGH_PATCH" 2>/dev/null; then
+  echo "== applying RPTC passthrough patch (BrandMeister fix)"
+  patch -p1 < "$PASSTHROUGH_PATCH"
+else
+  echo "== passthrough patch did not apply cleanly, using python fallback"
+  [[ -f "$PASSTHROUGH_PY" ]] || { echo "Fallback script missing: $PASSTHROUGH_PY" >&2; exit 1; }
+  python3 "$PASSTHROUGH_PY" DMRGateway.cpp
+fi
+
+# (Oct 19 2026): vanilla getConfig() REBUILDS the RPTC it sends upstream
+# with an sprintf whose tail fields (flags byte, software, package) are
+# read from m_config offsets 30/31/71 -- correct for an MMDVMHost layout,
+# wrong for MMDVM_Bridge, which writes its latitude unsigned
+# ("39.00999..."), so those fields come out as garbage. Lenient networks
+# (TGIF, KS-DMR) accept the mangled RPTC; BrandMeister validates strictly
+# and rejected the login ~50ms after the RPTC ("Login to the master has
+# failed") even though the password was right -- BM direct from
+# MMDVM_Bridge worked fine. scripts/dmrgateway-rptc-passthrough.patch
+# makes getConfig() pass the MMDVM's captured RPTC payload through
+# verbatim instead. Verified Oct 19 2026: "BM_3103, Logged into the
+# master successfully" and BM self-care "Repeater 320968633 verified".
+# Must be applied AFTER the other DMRGateway.cpp patches.
+if grep -q 'MMDVM passthrough' DMRGateway.cpp 2>/dev/null; then
+  echo "== RPTC passthrough patch already applied, skipping"
+else
+  echo "== applying RPTC passthrough patch"
+  [[ -f "$RPTC_PATCH" ]] || { echo "Patch file missing: $RPTC_PATCH" >&2; exit 1; }
+  patch -p1 < "$RPTC_PATCH"
 fi
 
 echo "== building"
