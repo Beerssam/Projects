@@ -1,0 +1,69 @@
+--- a/DMRGateway.cpp
++++ b/DMRGateway.cpp
+@@ -2546,48 +2546,39 @@
+ {
+ 	assert(buffer != NULL);
+ 
+-	float lat = m_conf.getInfoLatitude();
+-	if ((lat > 90) || (lat < -90))
+-		lat = 0;
+-
+-	float lon = m_conf.getInfoLongitude();
+-	if ((lon > 180) || (lon < -180))
+-		lon = 0;
+-
+-	int height = m_conf.getInfoHeight();
+-	if (height > 999)
+-		height = 999;
+-	else if (height < 0)
+-		height = 0;
+-
+-	std::string location    = m_conf.getInfoLocation();
+-	std::string description = m_conf.getInfoDescription();
+-	std::string url         = m_conf.getInfoURL();
+-
+-	::sprintf((char*)buffer, "%8.8s%9.9s%9.9s%2.2s%2.2s%+08.4f%+09.4f%03d%-20.20s%-19.19s%c%-124.124s%40.40s%40.40s",
+-		m_config + 0U, m_config + 8U, m_config + 17U, m_config + 26U, m_config + 28U,
+-		lat, lon, height, location.c_str(),
+-		description.c_str(), m_config[30U], url.c_str(), m_config + 31U, m_config + 71U);
++	// RPTL/DVSwitch fix: pass the MMDVM's captured RPTC payload through verbatim.
++	// The sprintf rebuild that used to live here mis-parses the MMDVM_Bridge
++	// field layout: MMDVM_Bridge writes its latitude unsigned ("39.00999..."),
++	// so the tail fields read from m_config offsets 30/31/71 (flags byte,
++	// software, package) come out as garbage. Lenient networks (TGIF, KS-DMR)
++	// accept it, but BrandMeister validates strictly and rejects the login
++	// ~50ms after the RPTC. This payload is byte-identical to what
++	// MMDVM_Bridge sends when connected directly, which BM accepts
++	// (verified 2026-10-19: "Logged into the master successfully").
++	unsigned int len = m_repeater->getShortConfig(buffer);
++	if (len == 0U) {
++		LogError("%s, no MMDVM config captured, cannot build RPTC", name.c_str());
++		return 0U;
++	}
++	buffer[len] = 0U; // callers use 400-byte buffers; terminate for logging
+ 
+ 	m_callsign = std::string((char*)m_config + 0U, 8U);
+ 	size_t n = m_callsign.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+ 	if (n != std::string::npos)
+ 		m_callsign.erase(n);
+-
+ 	char frequency[10U];
+ 	::memset(frequency, 0x00U, 10U);
+ 	::memcpy(frequency, m_config + 8U, 9U);
+ 	m_rxFrequency = (unsigned int)::atoi(frequency);
+-
+ 	::memset(frequency, 0x00U, 10U);
+ 	::memcpy(frequency, m_config + 17U, 9U);
+ 	m_txFrequency = (unsigned int)::atoi(frequency);
+ 
+-	LogInfo("%s: configuration message: %s", name.c_str(), buffer);
+-
+-	return (unsigned int)::strlen((char*)buffer);
++	LogInfo("%s: configuration message (MMDVM passthrough, %u bytes): %s", name.c_str(), len, buffer);
++	return len;
+ }
+ 
++
+ void CDMRGateway::processRadioPosition()
+ {
+ 	unsigned char buffer[50U];
