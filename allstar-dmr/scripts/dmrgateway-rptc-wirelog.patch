@@ -1,0 +1,53 @@
+--- a/DMRGateway.cpp
++++ b/DMRGateway.cpp
+@@ -2555,7 +2555,19 @@
+ 	// ~50ms after the RPTC. This payload is byte-identical to what
+ 	// MMDVM_Bridge sends when connected directly, which BM accepts
+ 	// (verified 2026-10-19: "Logged into the master successfully").
+-	unsigned int len = m_repeater->getShortConfig(buffer);
++	// Take the payload from the gateway's own captured copy (m_config /
++	// m_configLen): run()'s startup wait loop only proceeds once that copy
++	// holds the MMDVM's full RPTC, so it is guaranteed present here. The
++	// first version of this fix re-read the payload from the repeater
++	// object at network-creation time; using the validated copy removes
++	// that second read from the chain.
++	unsigned int len = 0U;
++	if (m_configLen > 0U) {
++		::memcpy(buffer, m_config, m_configLen);
++		len = m_configLen;
++	} else {
++		len = m_repeater->getShortConfig(buffer);
++	}
+ 	if (len == 0U) {
+ 		LogError("%s, no MMDVM config captured, cannot build RPTC", name.c_str());
+ 		return 0U;
+--- a/DMRNetwork.cpp
++++ b/DMRNetwork.cpp
+@@ -91,6 +91,8 @@
+ 	::memcpy(m_configData, data, len);
+ 
+ 	m_configLen = len;
++
++	LogInfo("%s: RPTC config stored, %u bytes", m_name.c_str(), len);
+ }
+ 
+ bool CDMRNetwork::open()
+@@ -513,11 +515,17 @@
+ 
+ 	::memcpy(buffer + 0U, "RPTC", 4U);
+ 	::memcpy(buffer + 4U, m_id, 4U);
+-	::memcpy(buffer + 8U, m_configData, m_configLen);
++	if (m_configLen > 0U)
++		::memcpy(buffer + 8U, m_configData, m_configLen);
+ 
+ 	if (!m_location)
+ 		::memcpy(buffer + 38U, "0.00000000.000000", 17U);
+ 
++	if (m_configLen == 0U)
++		LogError("%s, sending RPTC with NO config data (login will fail)", m_name.c_str());
++	else
++		LogDebug("%s, sending RPTC: %u bytes total, %u bytes config", m_name.c_str(), m_configLen + 8U, m_configLen);
++
+ 	return write((unsigned char*)buffer, m_configLen + 8U);
+ }
+ 
