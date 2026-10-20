@@ -17,6 +17,8 @@ set -euo pipefail
 #   5. dmrgateway-rptc-passthrough.patch (Oct 19: BM RPTC passthrough)
 #   6. dmrgateway-rptc-wirelog.patch     (Oct 20: RPTC payload source +
 #                                         per-send wire logging)
+#   7. dmrgateway-rptcl-guard.patch      (Oct 20: RPTCL/RPTC prefix
+#                                         collision -- the BM root cause)
 
 [[ $EUID -eq 0 ]] || { echo "Run as root (sudo)." >&2; exit 1; }
 
@@ -177,6 +179,32 @@ else
   echo "== applying RPTC wire-log patch"
   [[ -f "$WIRELOG_PATCH" ]] || { echo "Patch file missing: $WIRELOG_PATCH" >&2; exit 1; }
   patch -p1 < "$WIRELOG_PATCH"
+fi
+
+# (Oct 20 2026): THE BrandMeister root cause. In CMMDVMNetwork::clock()
+# (added by the RPTL patch), the config capture matches any packet
+# starting with "RPTC" and stores length-8 bytes, first packet only.
+# The 9-byte RPTCL logout that MMDVM_Bridge sends when it stops or
+# restarts also starts with "RPTC" -- and the dedicated RPTCL branch
+# sat AFTER the RPTC branch, unreachable. A restart therefore latched
+# a 1-byte "config" before the real 294-byte RPTC arrived, and every
+# network sent a 9-byte RPTC from then on. BM silently discards those
+# (60s timeout, no self-care entry); TGIF/KS-DMR do not validate the
+# config and logged in fine -- which is why BM broke exactly when the
+# multi-network setup was redeployed (joint restart order: gateway
+# first, then MMDVM_Bridge logs out its old session into it) while
+# the 20:20 single-network test, built with both services stopped,
+# logged in clean. Fix: match RPTCL BEFORE RPTC, and only store an
+# RPTC whose length shows a real payload (> 9 bytes). Marker:
+# 'must be matched BEFORE RPTC' in MMDVMNetwork.cpp. Applies last;
+# touches only MMDVMNetwork.cpp.
+RPTCL_PATCH="$SCRIPT_DIR/dmrgateway-rptcl-guard.patch"
+if grep -q 'must be matched BEFORE RPTC' MMDVMNetwork.cpp 2>/dev/null; then
+  echo "== RPTCL guard patch already applied, skipping"
+else
+  echo "== applying RPTCL guard patch"
+  [[ -f "$RPTCL_PATCH" ]] || { echo "Patch file missing: $RPTCL_PATCH" >&2; exit 1; }
+  patch -p1 < "$RPTCL_PATCH"
 fi
 
 echo "== building"
