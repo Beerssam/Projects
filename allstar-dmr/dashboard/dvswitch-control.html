@@ -282,6 +282,10 @@ function api(action, params = {}, timeoutMs = 10000) {
 
 let selectedNet = "bm"; // Default to BrandMeister
 let cardMode = null; // Mode of the currently shown mode-specific tune card
+// True when the current tune-box value came from the reflector dropdown;
+// manual typing clears it. The CGI applies the YSF 8/9 prefix only when
+// this is true, so a manually typed value (e.g. 99999 parrot) tunes verbatim.
+let tuneFromList = false;
 
 function buildPresets() {
   const grid = document.getElementById("preset-grid");
@@ -350,7 +354,7 @@ function setMode(mode) {
     modeTuneCard.classList.remove("hidden");
     cardMode = mode;
     const configs = {
-      "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list or enter reflector ID" },
+      "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list, or type the full dial number (e.g. 894122 for reflector 94122; 99999 for parrot)" },
       "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
       "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Pick from list or enter TG" },
       "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Pick from list or enter reflector" },
@@ -360,12 +364,13 @@ function setMode(mode) {
     modeTuneTitle.textContent = cfg.title;
     modeTuneInput.placeholder = cfg.placeholder;
     modeTuneInput.value = "";
+    tuneFromList = false;
     modeTuneHint.textContent = cfg.hint;
     // Populate reflector dropdown from the node's host files (cached)
     const sel = document.getElementById("mode-reflector-select");
     sel.innerHTML = '<option value="">Loading...</option>';
     loadReflectors(mode, sel);
-    sel.onchange = () => { if (sel.value) modeTuneInput.value = sel.value; };
+    sel.onchange = () => { if (sel.value) { modeTuneInput.value = sel.value; tuneFromList = true; } };
   }
   
   // Send to node; do NOT auto-refresh (server state lags, causes UI to jump back).
@@ -391,7 +396,9 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   document.getElementById("current-desc").textContent = "Tuning...";
   // for_mode tells the CGI which mode this value belongs to, so the tune
   // can't silently land in the wrong mode if the mode switch lagged/failed.
-  api("tune", { tgid: val, for_mode: cardMode || "" }).then(r => {
+  // from_list tells the CGI the value came from the reflector dropdown, so
+  // the YSF 8/9 prefix applies; a manually typed value tunes verbatim.
+  api("tune", { tgid: val, for_mode: cardMode || "", from_list: tuneFromList ? "1" : "" }).then(r => {
     if (r.ok) {
       const switched = r.mode_switched ? `Switched to ${cardMode} + tuned to ` : "Tuned to ";
       document.getElementById("current-desc").textContent = switched + val + " (hit Refresh Status to verify)";
@@ -401,7 +408,11 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   }).catch(e => {
     document.getElementById("current-desc").textContent = "Tune error: " + e.message;
   });
+  tuneFromList = false; // one-shot: a tune consumes the dropdown flag
 });
+// Typing in the box clears the dropdown flag -- only an actual dropdown pick
+// may carry the YSF 8/9 prefix.
+document.getElementById("mode-tune-input").addEventListener("input", () => { tuneFromList = false; });
 
 function updateGainLabel(which) {
   const slider = document.getElementById(which + "-slider");
@@ -457,7 +468,7 @@ function refreshStatus() {
     } else {
       modeTuneCard.classList.remove("hidden");
       const configs = {
-        "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list or enter reflector ID" },
+        "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list, or type the full dial number (e.g. 894122 for reflector 94122; 99999 for parrot)" },
         "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
         "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Pick from list or enter TG" },
         "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Pick from list or enter reflector" },
