@@ -15,6 +15,8 @@ set -euo pipefail
 #   3. dmrgateway-scan-logchange.patch  (Oct 14: scan log throttling)
 #   4. dmrgateway-private-call.patch    (Oct 15: 9990 group->private conversion)
 #   5. dmrgateway-rptc-passthrough.patch (Oct 19: BM RPTC passthrough)
+#   6. dmrgateway-rptc-wirelog.patch     (Oct 20: RPTC payload source +
+#                                         per-send wire logging)
 
 [[ $EUID -eq 0 ]] || { echo "Run as root (sudo)." >&2; exit 1; }
 
@@ -152,6 +154,29 @@ else
   echo "== applying RPTC passthrough patch"
   [[ -f "$RPTC_PATCH" ]] || { echo "Patch file missing: $RPTC_PATCH" >&2; exit 1; }
   patch -p1 < "$RPTC_PATCH"
+fi
+
+# (Oct 20 2026): RPTC wire log + payload source hardening. After the
+# 21:36 redeploy (all three networks enabled), BM logins timed out 60s
+# after "Sending configuration" with no BM self-care entry, while the
+# passthrough "configuration message" line stopped appearing in the
+# journal entirely -- the RPTC path had no trustworthy observability.
+# This patch: (a) getConfig() takes the payload from the gateway's own
+# captured copy (m_config/m_configLen, filled by run()'s startup wait
+# loop, which only proceeds once the full RPTC has been captured)
+# instead of re-reading the repeater object at network-creation time;
+# (b) CDMRNetwork::setConfig logs the stored config size at creation;
+# (c) CDMRNetwork::writeConfig logs the exact RPTC size on EVERY send
+# (including the silent retry resends) and errors loudly if the stored
+# config is empty. Marker: 'RPTC config stored' in DMRNetwork.cpp.
+# Must come after the passthrough patch (it edits its getConfig body).
+WIRELOG_PATCH="$SCRIPT_DIR/dmrgateway-rptc-wirelog.patch"
+if grep -q 'RPTC config stored' DMRNetwork.cpp 2>/dev/null; then
+  echo "== RPTC wire-log patch already applied, skipping"
+else
+  echo "== applying RPTC wire-log patch"
+  [[ -f "$WIRELOG_PATCH" ]] || { echo "Patch file missing: $WIRELOG_PATCH" >&2; exit 1; }
+  patch -p1 < "$WIRELOG_PATCH"
 fi
 
 echo "== building"
