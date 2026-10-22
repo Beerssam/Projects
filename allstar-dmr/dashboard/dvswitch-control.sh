@@ -406,7 +406,7 @@ do_live() {
 }
 
 do_tune() {
-  local tgid tune_re mode tune_val for_mode live_mode mode_switched waited
+  local tgid tune_re mode tune_val for_mode live_mode mode_switched waited stable
   local send_epoch attempts verified
   tgid=$(get_param tgid)
   for_mode=$(get_param for_mode)
@@ -452,12 +452,18 @@ do_tune() {
     fi
     mode_switched=true
     # Wait for the switch to take effect (Analog_Bridge reconfigures); fail
-    # loudly instead of tuning blindly into the wrong mode.
-    waited=0
-    while [[ "$(current_mode)" != "$for_mode" && $waited -lt 10 ]]; do
+    # loudly instead of tuning blindly into the wrong mode. Same 2-read
+    # stabilization as do_mode: one mid-restart ABInfo write can flap.
+    waited=0; stable=0
+    while [[ $waited -lt 10 ]]; do
+      if [[ "$(current_mode)" == "$for_mode" ]]; then
+        stable=$((stable+1)); [[ $stable -ge 2 ]] && break
+      else
+        stable=0
+      fi
       sleep 1; waited=$((waited+1))
     done
-    if [[ "$(current_mode)" != "$for_mode" ]]; then
+    if [[ $stable -lt 2 ]]; then
       printf '{"ok":false,"error":"mode switch to %s did not take effect (node still reports %s)"}' \
         "$for_mode" "$(current_mode)"
       return
@@ -603,7 +609,7 @@ switch_mode() {
 }
 
 do_mode() {
-  local mode tlv_fixed waited
+  local mode tlv_fixed waited stable
   mode=$(get_param mode)
   case "$mode" in
     DMR|YSF|P25|NXDN|DSTAR|M17) ;;
@@ -618,11 +624,19 @@ do_mode() {
     # restarts on a mode switch, and a mode tap sent into that window used
     # to return ok:true while the node stayed on the old mode. Wait for the
     # node to actually report the new mode via ABInfo first.
-    waited=0
-    while [[ "$(current_mode)" != "$mode" && $waited -lt 12 ]]; do
+    # Require the new mode on 2 consecutive reads: a single mid-restart
+    # ABInfo write can flap, and confirming on a flap would report success
+    # for a mode the node then falls out of.
+    waited=0; stable=0
+    while [[ $waited -lt 12 ]]; do
+      if [[ "$(current_mode)" == "$mode" ]]; then
+        stable=$((stable+1)); [[ $stable -ge 2 ]] && break
+      else
+        stable=0
+      fi
       sleep 1; waited=$((waited+1))
     done
-    if [[ "$(current_mode)" != "$mode" ]]; then
+    if [[ $stable -lt 2 ]]; then
       printf '{"ok":false,"error":"mode command sent but the node still reports %s after 12s"}' \
         "$(current_mode)"
       return
