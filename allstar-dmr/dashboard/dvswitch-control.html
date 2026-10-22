@@ -102,6 +102,7 @@
     <div class="tg" id="current-tg">---</div>
     <div class="desc" id="current-desc">Loading...</div>
     <div class="real-src hidden" id="real-src"></div>
+    <div class="real-src hidden" id="live-line"></div>
   </div>
 </div>
 
@@ -425,9 +426,22 @@ function setGain(which, value) {
   fetch(`cgi-bin/dvswitch-control.sh?action=gain&${which}=${v}`)
     .then(r => r.json())
     .then(d => {
-      if (!d.ok) alert("Gain update failed: " + (d.error || "unknown"));
+      if (!d.ok) {
+        alert("Gain update failed: " + (d.error || "unknown"));
+        loadGains(); // snap the sliders back to what the node actually has
+        return;
+      }
+      // Show what the node read back from its ini, not just the request.
+      if (d.tlv !== undefined) {
+        document.getElementById("tlv-slider").value = d.tlv;
+        document.getElementById("tlv-val").textContent = parseFloat(d.tlv).toFixed(2);
+      }
+      if (d.usrp !== undefined) {
+        document.getElementById("usrp-slider").value = d.usrp;
+        document.getElementById("usrp-val").textContent = parseFloat(d.usrp).toFixed(2);
+      }
     })
-    .catch(e => alert("Gain update error: " + e.message));
+    .catch(e => { alert("Gain update error: " + e.message); loadGains(); });
 }
 
 function loadGains() {
@@ -509,8 +523,22 @@ function refreshStatus() {
       realSrc.classList.add("hidden");
     }
     
-    // Log
-    document.getElementById("log-box").textContent = r.log || "No recent activity";
+    // Recent activity (from the bridge log via the CGI; newest first).
+    // Falls back to the journal log text if activity is unavailable.
+    const act = (r.activity || []).filter(Boolean);
+    if (act.length) {
+      document.getElementById("log-box").textContent = act.join("\n");
+    } else {
+      document.getElementById("log-box").textContent = r.log || "No recent activity";
+    }
+    // Latest activity also surfaces on the Current card.
+    const live = document.getElementById("live-line");
+    if (act.length) {
+      live.classList.remove("hidden");
+      live.textContent = "Last activity: " + act[0];
+    } else {
+      live.classList.add("hidden");
+    }
   }).catch(e => {
     document.getElementById("log-box").textContent = "Status error: " + e.message;
   });
