@@ -161,6 +161,15 @@
 <div class="card">
   <h2>Services</h2>
   <div id="services">
+    <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:4px;">Networks</div>
+    <div class="status-row"><span class="label">BrandMeister</span><span id="net-bm">...</span></div>
+    <div class="status-row"><span class="label">TGIF</span><span id="net-tgif">...</span></div>
+    <div class="status-row"><span class="label">KS-DMR</span><span id="net-ksdmr">...</span></div>
+    <div class="status-row"><span class="label">YSF Gateway</span><span id="net-ysf">...</span></div>
+    <div class="status-row"><span class="label">P25 Gateway</span><span id="net-p25">...</span></div>
+    <div class="status-row"><span class="label">NXDN Gateway</span><span id="net-nxdn">...</span></div>
+    <div class="status-row"><span class="label">D-STAR Gateway</span><span id="net-dstar">...</span></div>
+    <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin:10px 0 4px;">Processes</div>
     <div class="status-row"><span class="label">DMRGateway</span><span id="svc-dmrgateway">...</span></div>
     <div class="status-row"><span class="label">MMDVM_Bridge</span><span id="svc-mmdvm">...</span></div>
     <div class="status-row"><span class="label">Analog_Bridge</span><span id="svc-analog">...</span></div>
@@ -513,6 +522,29 @@ function refreshStatus() {
     svc("svc-dmrgateway", r.services.dmrgateway);
     svc("svc-mmdvm", r.services.mmdvm_bridge);
     svc("svc-analog", r.services.analog_bridge);
+
+    // Networks: DMR login states (connected/down/unknown, with the local
+    // time of the last login verdict) and gateway unit states.
+    const net = (id, state, ts) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      let txt = "Unknown", cls = "status-warn";
+      if (state === "connected") { txt = "Connected" + (ts ? " · " + ts : ""); cls = "status-ok"; }
+      else if (state === "active") { txt = "Active"; cls = "status-ok"; }
+      else if (state === "down") { txt = "Down"; cls = "status-bad"; }
+      else if (state === "failed") { txt = "Failed"; cls = "status-bad"; }
+      else if (state === "inactive") { txt = "Inactive"; cls = "status-warn"; }
+      el.textContent = txt;
+      el.className = cls;
+    };
+    const n = r.nets || {};
+    net("net-bm", n.bm, n.bm_ts);
+    net("net-tgif", n.tgif, n.tgif_ts);
+    net("net-ksdmr", n.ksdmr, n.ksdmr_ts);
+    net("net-ysf", n.ysf);
+    net("net-p25", n.p25);
+    net("net-nxdn", n.nxdn);
+    net("net-dstar", n.dstar);
     
     // Real source TG from scan logs
     const realSrc = document.getElementById("real-src");
