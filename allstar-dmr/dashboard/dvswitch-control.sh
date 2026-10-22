@@ -217,9 +217,10 @@ import json, re, sys
 from datetime import datetime, timezone
 
 TX_BEGIN = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+), Begin TX: src=(\S+) rpt=\S+ dst=(\S+) slot=\d+(?: .*metadata=(\S+))?")
-RX_HEAD = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+) Slot \d+, received network voice header from (\S+) to (?:TG )?(\S+)")
+RX_HEAD = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+)(?: Slot \d+)?, received network voice header from (\S+) to (?:TG )?(\S+)")
 RX_END = re.compile(r"received network end of voice transmission, ([\d.]+) seconds")
 TX_OFF = re.compile(r"TX state = OFF, DMR frame count was (\d+) frames")
+TX_RF_END = re.compile(r"received RF end of transmission, ([\d.]+) seconds")
 
 def epoch(ts):
     return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
@@ -237,16 +238,21 @@ try:
         for line in lines:
             m = TX_BEGIN.match(line)
             if m:
-                ts, _mode, src, dst, meta = m.groups()
+                ts, mode, src, dst, meta = m.groups()
                 ep = epoch(ts)
-                ev = [ep, "%s TX %s \u2192 %s" % (datetime.fromtimestamp(ep).strftime("%H:%M"), meta or src, dst)]
+                who = meta or src
+                if mode != "DMR":
+                    who = "%s %s" % (mode, who)
+                ev = [ep, "%s TX %s \u2192 %s" % (datetime.fromtimestamp(ep).strftime("%H:%M"), who, dst)]
                 events.append(ev)
                 last_tx, last_rx = ev, None
                 continue
             m = RX_HEAD.match(line)
             if m:
-                ts, _mode, frm, to = m.groups()
+                ts, mode, frm, to = m.groups()
                 ep = epoch(ts)
+                if mode != "DMR":
+                    frm = "%s %s" % (mode, frm)
                 ev = [ep, "%s RX %s \u2192 %s" % (datetime.fromtimestamp(ep).strftime("%H:%M"), frm, to)]
                 events.append(ev)
                 last_rx, last_tx = ev, None
@@ -262,11 +268,77 @@ try:
                 if secs >= 1:
                     last_tx[1] += " \u00b7 ~%ds" % secs
                 last_tx = None
+                continue
+            m = TX_RF_END.search(line)
+            if m and last_tx is not None:
+                last_tx[1] += " \u00b7 %gs" % float(m.group(1))
+                last_tx = None
 except Exception:
     events = []
 
 events.sort(key=lambda e: e[0])
 print(json.dumps([label for _ep, label in reversed(events[-8:])]))
+PYEOF
+}
+
+live_state() {
+  # Live TX/RX state for the dashboard lamps, from the newest bridge log:
+  # a direction is "on" when its latest begin line has no matching end
+  # line after it and began within the last 300s (staleness guard against
+  # a missed end line sticking a lamp on). Prints a JSON object.
+  local -a files
+  mapfile -t files < <(bridge_log_files)
+  if [[ ${#files[@]} -eq 0 ]]; then printf '{"tx_on":false,"tx_label":"","rx_on":false,"rx_label":""}'; return; fi
+  python3 - "${files[0]}" <<'PYEOF'
+import json, re, sys, time
+from datetime import datetime, timezone
+
+TX_BEGIN = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+), Begin TX: src=(\S+) rpt=\S+ dst=(\S+) slot=\d+(?: .*metadata=(\S+))?")
+RX_HEAD = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+)(?: Slot \d+)?, received network voice header from (\S+) to (?:TG )?(\S+)")
+TX_END = re.compile(r"TX state = OFF|received RF end of transmission")
+RX_END = re.compile(r"received network end of voice transmission")
+
+def epoch(ts):
+    return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+
+tx = {"begin": 0, "end": 0, "label": ""}
+rx = {"begin": 0, "end": 0, "label": ""}
+try:
+    with open(sys.argv[1], errors="replace") as fh:
+        lines = fh.readlines()[-800:]
+    for line in lines:
+        m = TX_BEGIN.match(line)
+        if m:
+            ts, mode, src, dst, meta = m.groups()
+            tx["begin"] = epoch(ts)
+            tx["label"] = "%s %s \u2192 %s" % (mode, meta or src, dst)
+            continue
+        if TX_END.search(line):
+            # No timestamp needed: any end after the last begin closes it;
+            # ordering is by file position, so record it positionally.
+            if tx["begin"]:
+                tx["end"] = tx["begin"] + 0.5
+            continue
+        m = RX_HEAD.match(line)
+        if m:
+            ts, mode, frm, to = m.groups()
+            rx["begin"] = epoch(ts)
+            rx["label"] = "%s %s \u2192 %s" % (mode, frm, to)
+            continue
+        if RX_END.search(line):
+            if rx["begin"]:
+                rx["end"] = rx["begin"] + 0.5
+except OSError:
+    pass
+
+now = time.time()
+def on(st):
+    return st["begin"] > st["end"] and (now - st["begin"]) <= 300
+
+print(json.dumps({
+    "tx_on": on(tx), "tx_label": tx["label"] if on(tx) else "",
+    "rx_on": on(rx), "rx_label": rx["label"] if on(rx) else "",
+}))
 PYEOF
 }
 
@@ -293,7 +365,7 @@ network_states() {
   printf '"bm":"%s","bm_ts":"%s","tgif":"%s","tgif_ts":"%s","ksdmr":"%s","ksdmr_ts":"%s","ysf":"%s","p25":"%s","nxdn":"%s","dstar":"%s"' \
     "$bm" "$bm_ts" "$tgif" "$tgif_ts" "$ks" "$ks_ts" \
     "$(svc_state ysfgateway)" "$(svc_state p25gateway)" \
-    "$(svc_state nxdngateway)" "$(svc_state ircddbgateway)"
+    "$(svc_state nxdngateway)" "$(svc_state ircddbgatewayd)"
 }
 
 # --- actions ---
@@ -323,6 +395,13 @@ do_status() {
   printf '"nets":{%s},' "$nets"
   printf '"log":"%s"' "$(json_escape "$log")"
   printf '}'
+}
+
+do_live() {
+  local live
+  live=$(live_state)
+  [[ "$live" == \{* ]] || live='{"tx_on":false,"tx_label":"","rx_on":false,"rx_label":""}'
+  printf '%s' "$live"
 }
 
 do_tune() {
@@ -722,6 +801,7 @@ printf '\r\n'
 action=$(get_param action)
 case "$action" in
   status)     do_status ;;
+  live)       do_live ;;
   tune)       do_tune ;;
   mode)       do_mode ;;
   reflectors) do_reflectors ;;
