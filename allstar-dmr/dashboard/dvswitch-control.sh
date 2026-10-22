@@ -407,7 +407,7 @@ do_live() {
 
 do_tune() {
   local tgid tune_re mode tune_val for_mode live_mode mode_switched waited stable
-  local send_epoch attempts verified
+  local send_epoch attempts verified acked
   tgid=$(get_param tgid)
   for_mode=$(get_param for_mode)
   # from_list=1 means the dashboard value came from the reflector dropdown
@@ -505,9 +505,17 @@ do_tune() {
   # new TG. Retry the send when no ack appears -- this automates Sam's manual
   # "tune it a second time" workaround. ok:true now means the tune was
   # acknowledged, not merely sent.
+  # Verification is two-stage (v2, Oct 22): a bridge-log ack alone proved
+  # insufficient right after a mode switch -- the bridge acked Sam's first
+  # YSF tune within a second, but Analog_Bridge had not engaged it (its
+  # network leg had not opened), so the tune only took on a second send.
+  # A tune now counts as verified only when AB's own state (ABInfo
+  # last_tune / digital.tg) shows it in effect; an acked-but-unengaged
+  # tune is resent while attempts remain, which is what engages it.
   send_epoch=$(date -u +%s)
   attempts=0
   verified=false
+  acked=false
   while [[ $attempts -lt 3 ]]; do
     attempts=$((attempts+1))
     if ! sudo "$DVS_SWITCH" tune "$tune_val" >/dev/null 2>&1; then
@@ -515,18 +523,52 @@ do_tune() {
       return
     fi
     if tune_ack_wait "$tune_val" "$send_epoch" 8; then
-      verified=true
-      break
+      acked=true
+      if tune_endstate_wait "$tune_val" "$tgid" 5; then
+        verified=true
+        break
+      fi
+      # Acked but not engaged in AB: fall through and resend.
     fi
     [[ $attempts -lt 3 ]] && sleep 2
   done
   if [[ "$verified" == true ]]; then
     printf '{"ok":true,"verified":true,"attempts":%d,"tgid":"%s","tuned_as":"%s","mode_switched":%s}' \
       "$attempts" "$tgid" "$tune_val" "$mode_switched"
+  elif [[ "$acked" == true ]]; then
+    printf '{"ok":true,"verified":false,"acked":true,"attempts":%d,"tgid":"%s","tuned_as":"%s","mode_switched":%s}' \
+      "$attempts" "$tgid" "$tune_val" "$mode_switched"
   else
     printf '{"ok":false,"verified":false,"attempts":%d,"tgid":"%s","error":"tune sent %d time(s) but MMDVM_Bridge never acknowledged it (no Remote CMD in the bridge log and ABInfo unchanged); the tune probably did not land"}' \
       "$attempts" "$tgid" "$attempts"
   fi
+}
+
+tune_endstate_ok() {
+  # $1 = tuned value, $2 = raw requested value (may equal $1). True when
+  # Analog_Bridge's own state shows the tune in effect: ABInfo last_tune or
+  # digital.tg equals either form (a YSF list pick tunes 894122 but AB may
+  # record the reflector as 94122). The bridge can acknowledge a tune
+  # (Remote CMD in its log) before AB has engaged it -- Sam's Oct 22 YSF
+  # case: the bridge acked txTg=99999 at 15:29:23 UTC but the YSF network
+  # leg only opened on a second send at :32, and only then did ABInfo move.
+  local v
+  v=$(abinfo_value last_tune)
+  [[ -n "$v" && ( "$v" == "$1" || "$v" == "$2" ) ]] && return 0
+  v=$(abinfo_value digital.tg)
+  [[ -n "$v" && ( "$v" == "$1" || "$v" == "$2" ) ]] && return 0
+  return 1
+}
+
+tune_endstate_wait() {
+  # $1 = tuned value, $2 = raw value, $3 = max wait seconds. Polls
+  # tune_endstate_ok once a second; 0 = the tune is in effect in AB.
+  local waited=0
+  while [[ $waited -lt ${3:-5} ]]; do
+    tune_endstate_ok "$1" "$2" && return 0
+    sleep 1; waited=$((waited+1))
+  done
+  tune_endstate_ok "$1" "$2"
 }
 
 tune_ack_wait() {
