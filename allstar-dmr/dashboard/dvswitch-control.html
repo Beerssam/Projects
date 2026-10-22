@@ -17,6 +17,26 @@
   }
   .header h1 { font-size: 1.3em; color: #38bdf8; font-weight: 600; }
   .header .callsign { font-size: 0.85em; color: #64748b; margin-top: 4px; }
+  .txrx-strip { display: flex; gap: 8px; margin-bottom: 12px; }
+  .lamp {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 10px;
+    background: #1e293b; border: 1px solid #334155;
+    color: #64748b; font-weight: 700; font-size: 0.95em;
+    transition: all 0.2s; overflow: hidden;
+  }
+  .lamp .lamp-dot {
+    flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%;
+    background: #334155;
+  }
+  .lamp .lamp-label {
+    font-weight: 500; font-size: 0.8em; color: #94a3b8;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lamp.on-rx { border-color: #22c55e; color: #22c55e; }
+  .lamp.on-rx .lamp-dot { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+  .lamp.on-tx { border-color: #ef4444; color: #ef4444; }
+  .lamp.on-tx .lamp-dot { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
   .card {
     background: #1e293b; border-radius: 12px;
     padding: 16px; margin-bottom: 12px;
@@ -94,6 +114,11 @@
 <div class="header">
   <h1>KF0RIZ Digital Control</h1>
   <div class="callsign">AllStar Node 625730 &bull; DVSwitch 1999</div>
+</div>
+
+<div class="txrx-strip">
+  <div class="lamp" id="lamp-rx"><span class="lamp-dot"></span><span>RX</span><span class="lamp-label" id="lamp-rx-label"></span></div>
+  <div class="lamp" id="lamp-tx"><span class="lamp-dot"></span><span>TX</span><span class="lamp-label" id="lamp-tx-label"></span></div>
 </div>
 
 <div class="card">
@@ -620,10 +645,26 @@ document.querySelectorAll(".net-btn").forEach(b => {
   };
 });
 
+function setLamp(which, on, label) {
+  const lamp = document.getElementById("lamp-" + which);
+  const lab = document.getElementById("lamp-" + which + "-label");
+  lamp.classList.toggle("on-" + which, !!on);
+  lab.textContent = on ? (label || "") : "";
+}
+
+function refreshLive() {
+  api("live").then(r => {
+    setLamp("rx", r.rx_on, r.rx_label);
+    setLamp("tx", r.tx_on, r.tx_label);
+  }).catch(() => {});
+}
+
 buildPresets();
 refreshStatus();
+refreshLive();
 loadGains();
 setInterval(refreshStatus, 15000);
+setInterval(refreshLive, 2500);
 </script>
 </body>
 </html>
