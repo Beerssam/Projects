@@ -34,6 +34,10 @@ MODE_SWITCH="$(dirname "$0" 2>/dev/null)/mode-switch.sh"
 # sliders always snapped back to the ini values (found Oct 21 2026).
 GAIN_SET="$(dirname "$0" 2>/dev/null)/gain-set.sh"
 [[ -x "$GAIN_SET" ]] || GAIN_SET="/var/www/cgi-bin/gain-set.sh"
+# Privileged network-status helper (same pattern): reads the DMRGateway
+# journal, which www-data cannot, and reports BM/TGIF/KS-DMR login state.
+NET_STATUS="$(dirname "$0" 2>/dev/null)/net-status.sh"
+[[ -x "$NET_STATUS" ]] || NET_STATUS="/var/www/cgi-bin/net-status.sh"
 # MMDVM_Bridge log directory (env override for testing). The bridge logs
 # real in/out transmissions to files here; unlike the systemd journal,
 # these are readable by www-data.
@@ -266,9 +270,35 @@ print(json.dumps([label for _ep, label in reversed(events[-8:])]))
 PYEOF
 }
 
+network_states() {
+  # Prints the JSON object contents for the "nets" status field: DMR
+  # network login states from the net-status helper (or "down" for all
+  # three when the gateway itself is not running), plus gateway unit
+  # states from systemctl.
+  local bm="unknown" bm_ts="" tgif="unknown" tgif_ts="" ks="unknown" ks_ts=""
+  local out kv rest k v
+  if [[ "$(svc_state dmrgateway)" != "active" ]]; then
+    bm="down"; tgif="down"; ks="down"
+  elif [[ -x "$NET_STATUS" ]]; then
+    out=$(sudo "$NET_STATUS" 2>/dev/null)
+    while IFS=' ' read -r kv rest; do
+      k="${kv%%=*}"; v="${kv#*=}"
+      case "$k" in
+        BM)    bm="$v";   bm_ts="$rest" ;;
+        TGIF)  tgif="$v"; tgif_ts="$rest" ;;
+        KSDMR) ks="$v";   ks_ts="$rest" ;;
+      esac
+    done <<< "$out"
+  fi
+  printf '"bm":"%s","bm_ts":"%s","tgif":"%s","tgif_ts":"%s","ksdmr":"%s","ksdmr_ts":"%s","ysf":"%s","p25":"%s","nxdn":"%s","dstar":"%s"' \
+    "$bm" "$bm_ts" "$tgif" "$tgif_ts" "$ks" "$ks_ts" \
+    "$(svc_state ysfgateway)" "$(svc_state p25gateway)" \
+    "$(svc_state nxdngateway)" "$(svc_state ircddbgateway)"
+}
+
 # --- actions ---
 do_status() {
-  local mode tune alias scan svc_dmr svc_mmdvm svc_ab log gw activity
+  local mode tune alias scan svc_dmr svc_mmdvm svc_ab log gw activity nets
   mode=$(current_mode)
   tune=$(current_tune)
   gw=$(abinfo_value digital.gw)
@@ -289,6 +319,8 @@ do_status() {
   printf '"activity":%s,' "$activity"
   printf '"services":{"dmrgateway":"%s","mmdvm_bridge":"%s","analog_bridge":"%s"},' \
     "$svc_dmr" "$svc_mmdvm" "$svc_ab"
+  nets=$(network_states)
+  printf '"nets":{%s},' "$nets"
   printf '"log":"%s"' "$(json_escape "$log")"
   printf '}'
 }
