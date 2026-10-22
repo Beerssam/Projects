@@ -359,9 +359,15 @@ function tune(tgid) {
   });
   // DMR presets always belong to DMR mode; send for_mode so the CGI
   // switches if the node is in a different mode (prevents silent wrong-mode tune)
-  api("tune", { tgid, for_mode: "DMR" }).then(r => {
+  // The CGI verifies the tune landed (bridge ack + retry) and only then
+  // reports ok:true, so a fast refresh right after shows the node's real
+  // state instead of waiting for the 15s poll. Longer timeout: a lost tune
+  // costs the CGI up to ~3 attempts x 8s ack-wait.
+  api("tune", { tgid, for_mode: "DMR" }, 45000).then(r => {
     if (r.ok) {
-      document.getElementById("current-desc").textContent = "Tuned (hit Refresh Status to verify)";
+      const tries = (r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)";
+      document.getElementById("current-desc").textContent = `Tuned to ${tgid}${tries}`;
+      setTimeout(refreshStatus, 2500);
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
     }
@@ -408,10 +414,15 @@ function setMode(mode) {
     sel.onchange = () => { if (sel.value) { modeTuneInput.value = sel.value; tuneFromList = true; } };
   }
   
-  // Send to node; do NOT auto-refresh (server state lags, causes UI to jump back).
-  // User can hit "Refresh Status" to verify.
-  api("mode", { mode }).then(r => {
-    if (!r.ok) {
+  // Send to node. The CGI waits for the node to report the new mode before
+  // returning ok:true, so a fast refresh right after is safe (previously the
+  // CGI returned on exit code alone and a refresh would "jump back").
+  // Longer timeout: the mode wait can take up to ~12s after a chain restart.
+  api("mode", { mode }, 30000).then(r => {
+    if (r.ok) {
+      document.getElementById("current-desc").textContent = `Mode ${mode} confirmed by node`;
+      setTimeout(refreshStatus, 2000);
+    } else {
       document.getElementById("current-desc").textContent = "Mode change failed: " + (r.error || "unknown");
       // Revert button highlighting on failure (was optimistically updated above)
       refreshStatus();
@@ -433,10 +444,14 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   // can't silently land in the wrong mode if the mode switch lagged/failed.
   // from_list tells the CGI the value came from the reflector dropdown, so
   // the YSF 8/9 prefix applies; a manually typed value tunes verbatim.
-  api("tune", { tgid: val, for_mode: cardMode || "", from_list: tuneFromList ? "1" : "" }).then(r => {
+  api("tune", { tgid: val, for_mode: cardMode || "", from_list: tuneFromList ? "1" : "" }, 45000).then(r => {
     if (r.ok) {
       const switched = r.mode_switched ? `Switched to ${cardMode} + tuned to ` : "Tuned to ";
-      document.getElementById("current-desc").textContent = switched + val + " (hit Refresh Status to verify)";
+      const tries = (r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)";
+      document.getElementById("current-desc").textContent = switched + val + tries;
+      // Fast post-action refresh: the CGI verified the tune, so show the
+      // node's real state now instead of waiting for the 15s poll.
+      setTimeout(refreshStatus, 2500);
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
     }
