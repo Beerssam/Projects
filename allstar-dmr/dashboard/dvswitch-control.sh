@@ -95,6 +95,7 @@ except Exception:
     P25)   printf 'P25' ;;
     NXDN)  printf 'NXDN' ;;
     DSTAR) printf 'DSTAR' ;;
+    M17)   printf 'M17' ;;
     *)     printf '' ;;   # unknown / Analog_Bridge not running: highlight nothing
   esac
 }
@@ -406,6 +407,7 @@ do_live() {
 
 do_tune() {
   local tgid tune_re mode tune_val for_mode live_mode mode_switched waited
+  local send_epoch attempts verified
   tgid=$(get_param tgid)
   for_mode=$(get_param for_mode)
   # from_list=1 means the dashboard value came from the reflector dropdown
@@ -485,12 +487,88 @@ do_tune() {
   # group-call frames; there is no per-tune group/private switch. Service
   # TGs that require a real private call (BM Parrot 9990) are converted by
   # the DMRGateway private-call patch (scripts/dmrgateway-private-call.patch).
-  if sudo "$DVS_SWITCH" tune "$tune_val" >/dev/null 2>&1; then
-    printf '{"ok":true,"tgid":"%s","tuned_as":"%s","mode_switched":%s}' \
-      "$tgid" "$tune_val" "$mode_switched"
+  #
+  # Verified tune (Oct 22 2026 -- Sam's tune-sticking report): the tune
+  # command is fire-and-forget UDP with no acknowledgement, so a tune sent
+  # while the chain is restarting after a mode switch evaporates silently
+  # while the page reports success (the Oct 21-22 NXDN case: tune sent 7s
+  # after a mode switch never arrived). Send, then verify the tune actually
+  # landed: MMDVM_Bridge logs every received remote command
+  # ("<MODE>, Remote CMD: txTg=<tg>" -- e.g. "YSF, Remote CMD: txTg=32453",
+  # DVSwitch groups.io Aug 2026), or ABInfo digital.tg already reflects the
+  # new TG. Retry the send when no ack appears -- this automates Sam's manual
+  # "tune it a second time" workaround. ok:true now means the tune was
+  # acknowledged, not merely sent.
+  send_epoch=$(date -u +%s)
+  attempts=0
+  verified=false
+  while [[ $attempts -lt 3 ]]; do
+    attempts=$((attempts+1))
+    if ! sudo "$DVS_SWITCH" tune "$tune_val" >/dev/null 2>&1; then
+      printf '{"ok":false,"verified":false,"attempts":%d,"error":"tune command failed"}' "$attempts"
+      return
+    fi
+    if tune_ack_wait "$tune_val" "$send_epoch" 8; then
+      verified=true
+      break
+    fi
+    [[ $attempts -lt 3 ]] && sleep 2
+  done
+  if [[ "$verified" == true ]]; then
+    printf '{"ok":true,"verified":true,"attempts":%d,"tgid":"%s","tuned_as":"%s","mode_switched":%s}' \
+      "$attempts" "$tgid" "$tune_val" "$mode_switched"
   else
-    printf '{"ok":false,"error":"tune command failed"}'
+    printf '{"ok":false,"verified":false,"attempts":%d,"tgid":"%s","error":"tune sent %d time(s) but MMDVM_Bridge never acknowledged it (no Remote CMD in the bridge log and ABInfo unchanged); the tune probably did not land"}' \
+      "$attempts" "$tgid" "$attempts"
   fi
+}
+
+tune_ack_wait() {
+  # $1 = tune value string, $2 = UTC epoch just before the first send,
+  # $3 = max wait seconds. Returns 0 when the tune is verified, by either:
+  #   (a) a "Remote CMD:" line containing the value in the MMDVM_Bridge log
+  #       with a timestamp at/after the send (MMDVM_Bridge logs every
+  #       received remote command), or
+  #   (b) ABInfo digital.tg equalling the value (the end state is correct,
+  #       however the tune got there).
+  # The timestamp guard keeps an older tune to the same value from counting.
+  # The value match uses non-alphanumeric boundaries so tuning 91 does not
+  # match a stale "txTg=910".
+  local val="$1" send_epoch="$2" maxwait="${3:-8}"
+  local waited=0 f
+  while [[ $waited -lt $maxwait ]]; do
+    if [[ "$(abinfo_value digital.tg)" == "$val" ]]; then return 0; fi
+    f=$(bridge_log_files | head -1)
+    if [[ -n "$f" && -r "$f" ]]; then
+      if python3 - "$f" "$send_epoch" "$val" 2>/dev/null <<'PYEOF'
+import re, sys
+from datetime import datetime, timezone
+path, send_epoch, val = sys.argv[1], float(sys.argv[2]), sys.argv[3]
+pat = re.compile(r"Remote CMD:.*(?<![A-Za-z0-9])" + re.escape(val) + r"(?![A-Za-z0-9])")
+def epoch(ts):
+    try:
+        return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+    except Exception:
+        return -1.0
+try:
+    with open(path, errors="replace") as fh:
+        for line in fh:
+            if not pat.search(line):
+                continue
+            m = re.search(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", line)
+            if m and epoch(m.group(1)) >= send_epoch - 2:
+                sys.exit(0)
+except OSError:
+    pass
+sys.exit(1)
+PYEOF
+      then
+        return 0
+      fi
+    fi
+    sleep 1; waited=$((waited+1))
+  done
+  return 1
 }
 
 switch_mode() {
@@ -525,7 +603,7 @@ switch_mode() {
 }
 
 do_mode() {
-  local mode tlv_fixed
+  local mode tlv_fixed waited
   mode=$(get_param mode)
   case "$mode" in
     DMR|YSF|P25|NXDN|DSTAR|M17) ;;
@@ -536,6 +614,19 @@ do_mode() {
     return
   fi
   if switch_mode "$mode"; then
+    # Don't report success on exit code alone (Oct 22 2026): the chain
+    # restarts on a mode switch, and a mode tap sent into that window used
+    # to return ok:true while the node stayed on the old mode. Wait for the
+    # node to actually report the new mode via ABInfo first.
+    waited=0
+    while [[ "$(current_mode)" != "$mode" && $waited -lt 12 ]]; do
+      sleep 1; waited=$((waited+1))
+    done
+    if [[ "$(current_mode)" != "$mode" ]]; then
+      printf '{"ok":false,"error":"mode command sent but the node still reports %s after 12s"}' \
+        "$(current_mode)"
+      return
+    fi
     tlv_fixed=false
     [[ "$SWITCH_TLV_FIXED" == "1" ]] && tlv_fixed=true
     printf '{"ok":true,"mode":"%s","tlv_fixed":%s' "$mode" "$tlv_fixed"
