@@ -27,6 +27,17 @@ DMR_INI="/opt/DMRGateway/DMRGateway.ini"
 # which silently breaks the Analog_Bridge -> MMDVM_Bridge handoff.
 MODE_SWITCH="$(dirname "$0" 2>/dev/null)/mode-switch.sh"
 [[ -x "$MODE_SWITCH" ]] || MODE_SWITCH="/var/www/cgi-bin/mode-switch.sh"
+# Privileged gain helper (installed beside this CGI by install.sh). The CGI
+# runs as www-data and may not edit Analog_Bridge.ini or restart services
+# directly -- the sudoers rule permits only this helper (same pattern as
+# mode-switch.sh). Without it, gain writes were silently refused and the
+# sliders always snapped back to the ini values (found Oct 21 2026).
+GAIN_SET="$(dirname "$0" 2>/dev/null)/gain-set.sh"
+[[ -x "$GAIN_SET" ]] || GAIN_SET="/var/www/cgi-bin/gain-set.sh"
+# MMDVM_Bridge log directory (env override for testing). The bridge logs
+# real in/out transmissions to files here; unlike the systemd journal,
+# these are readable by www-data.
+BRIDGE_LOG_DIR="${BRIDGE_LOG_DIR:-/var/log/mmdvm}"
 
 # --- helpers ---
 json_escape() {
@@ -84,19 +95,66 @@ except Exception:
   esac
 }
 
+abinfo_file() {
+  ls -t /tmp/ABInfo_*.json 2>/dev/null | head -1
+}
+
+abinfo_value() {
+  # $1 = dotted path into the ABInfo JSON (e.g. digital.tg, last_tune).
+  # Prints the string value or nothing. Analog_Bridge rewrites this file
+  # on every state change, so it reflects live state (the ini does not).
+  local f
+  f=$(abinfo_file)
+  [[ -n "$f" && -r "$f" ]] || return 0
+  python3 -c 'import json,sys
+try:
+  d = json.load(open(sys.argv[1]))
+  for k in sys.argv[2].split("."):
+    d = d.get(k, {}) if isinstance(d, dict) else {}
+  print(d if isinstance(d, str) else "")
+except Exception:
+  print("")' "$f" "$1" 2>/dev/null
+}
+
+bridge_log_files() {
+  # Newest first. MMDVM_Bridge logs real in/out transmissions here.
+  ls -t "$BRIDGE_LOG_DIR"/MMDVM_Bridge-*.log 2>/dev/null | head -2
+}
+
+last_tx_dst() {
+  # Destination of the most recent outbound transmission in the bridge log.
+  local f dst
+  while IFS= read -r f; do
+    dst=$(grep -a "Begin TX:" "$f" 2>/dev/null | tail -1 | sed -n 's/.*dst=\([0-9][0-9]*\).*/\1/p')
+    if [[ -n "$dst" ]]; then printf '%s' "$dst"; return; fi
+  done < <(bridge_log_files)
+  printf ''
+}
+
 current_tune() {
-  # The tuned TG is in Analog_Bridge.ini as txTG. Strip comments (;) and whitespace.
+  # Best available "current TG", in order:
+  #   1. ABInfo last_tune (Analog_Bridge's record of the last tune)
+  #   2. Destination of the last transmission in the bridge log
+  #   3. Analog_Bridge.ini txTG (startup default)
+  #   4. ABInfo digital.tg (equals the node's own DMR ID at idle; the
+  #      alias text explains that case instead of calling it a talkgroup)
+  # The old code read only the ini, so Current sat at the DMR ID (3209686)
+  # and never reflected traffic (Sam's report, Oct 21 2026; ABInfo on the
+  # node confirmed digital.tg is the ID whenever the node is idle).
   local t
-  t=$(grep -iE "^txTG" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
-  # Validate it's numeric; otherwise return empty
-  if [[ "$t" =~ ^[0-9]+$ ]]; then
-    printf '%s' "$t"
-  else
-    printf ''
-  fi
+  t=$(abinfo_value last_tune)
+  if [[ "$t" =~ ^[0-9]+$ ]]; then printf '%s' "$t"; return; fi
+  t=$(last_tx_dst)
+  if [[ -n "$t" ]]; then printf '%s' "$t"; return; fi
+  t=$(grep -iE "^[[:space:]]*txTG[[:space:]]*=" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
+  if [[ "$t" =~ ^[0-9]+$ ]]; then printf '%s' "$t"; return; fi
+  t=$(abinfo_value digital.tg)
+  if [[ "$t" =~ ^[0-9]+$ ]]; then printf '%s' "$t"; return; fi
+  printf ''
 }
 
 tune_alias() {
+  # $1 = tune value; $2 = gateway DMR ID (ABInfo digital.gw), may be empty
   case "$1" in
     4000777) printf 'TGIF 777 (scan)' ;;
     7003120) printf 'KS-DMR 3120 (Kansas)' ;;
@@ -104,11 +162,19 @@ tune_alias() {
     93)      printf 'BM 93 North America' ;;
     3100)    printf 'BM 3100 USA' ;;
     3120)    printf 'BM 3120 Kansas' ;;
+    9990)    printf 'BM Parrot (private)' ;;
     4000)    printf 'Disconnect' ;;
     *)
-      # A 7-digit value that is not a dial string (4xxxxxx/7xxxxxx) is a DMR
-      # ID, not a talkgroup (Analog_Bridge defaults txTG to the DMR ID).
-      if [[ "$1" =~ ^[0-9]{7}$ ]] && ! [[ "$1" =~ ^[47] ]]; then
+      if [[ -n "$2" && "$1" == "$2" ]]; then
+        # The value is the node's own DMR ID: Analog_Bridge idles there.
+        printf 'Standby — showing your DMR ID, tune below'
+      elif [[ "$1" =~ ^4[0-9]{6}$ ]]; then
+        printf 'TGIF TG %s' "$((10#${1:1}))"
+      elif [[ "$1" =~ ^7[0-9]{6}$ ]]; then
+        printf 'KS-DMR TG %s' "$((10#${1:1}))"
+      elif [[ "$1" =~ ^[0-9]{7}$ ]]; then
+        # A 7-digit value that is not a dial string (4xxxxxx/7xxxxxx) is a
+        # DMR ID, not a talkgroup.
         printf 'not a talkgroup (DMR ID?) — tune below'
       else
         printf ''
@@ -132,13 +198,84 @@ recent_log() {
     | tail -8
 }
 
+recent_activity() {
+  # Recent in/out transmissions from the MMDVM_Bridge log files. (The
+  # journal is not readable by www-data -- verified on the node Oct 21
+  # 2026: "No journal files were opened due to insufficient permissions" --
+  # so the old journal-based activity feed was always empty.) Prints a JSON
+  # array of display strings, newest first, max 8. Log timestamps are UTC;
+  # displayed in node-local time.
+  local -a files
+  mapfile -t files < <(bridge_log_files)
+  if [[ ${#files[@]} -eq 0 ]]; then printf '[]'; return; fi
+  python3 - "${files[@]}" <<'PYEOF'
+import json, re, sys
+from datetime import datetime, timezone
+
+TX_BEGIN = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+), Begin TX: src=(\S+) rpt=\S+ dst=(\S+) slot=\d+(?: .*metadata=(\S+))?")
+RX_HEAD = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (\w+) Slot \d+, received network voice header from (\S+) to (?:TG )?(\S+)")
+RX_END = re.compile(r"received network end of voice transmission, ([\d.]+) seconds")
+TX_OFF = re.compile(r"TX state = OFF, DMR frame count was (\d+) frames")
+
+def epoch(ts):
+    return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).timestamp()
+
+events = []
+try:
+    for path in reversed(sys.argv[1:]):
+        try:
+            with open(path, errors="replace") as fh:
+                lines = fh.readlines()[-4000:]
+        except OSError:
+            continue
+        last_tx = None
+        last_rx = None
+        for line in lines:
+            m = TX_BEGIN.match(line)
+            if m:
+                ts, _mode, src, dst, meta = m.groups()
+                ep = epoch(ts)
+                ev = [ep, "%s TX %s \u2192 %s" % (datetime.fromtimestamp(ep).strftime("%H:%M"), meta or src, dst)]
+                events.append(ev)
+                last_tx, last_rx = ev, None
+                continue
+            m = RX_HEAD.match(line)
+            if m:
+                ts, _mode, frm, to = m.groups()
+                ep = epoch(ts)
+                ev = [ep, "%s RX %s \u2192 %s" % (datetime.fromtimestamp(ep).strftime("%H:%M"), frm, to)]
+                events.append(ev)
+                last_rx, last_tx = ev, None
+                continue
+            m = RX_END.search(line)
+            if m and last_rx is not None:
+                last_rx[1] += " \u00b7 %gs" % float(m.group(1))
+                last_rx = None
+                continue
+            m = TX_OFF.search(line)
+            if m and last_tx is not None:
+                secs = round(int(m.group(1)) / 16.67)
+                if secs >= 1:
+                    last_tx[1] += " \u00b7 ~%ds" % secs
+                last_tx = None
+except Exception:
+    events = []
+
+events.sort(key=lambda e: e[0])
+print(json.dumps([label for _ep, label in reversed(events[-8:])]))
+PYEOF
+}
+
 # --- actions ---
 do_status() {
-  local mode tune alias scan svc_dmr svc_mmdvm svc_ab log
+  local mode tune alias scan svc_dmr svc_mmdvm svc_ab log gw activity
   mode=$(current_mode)
   tune=$(current_tune)
-  alias=$(tune_alias "$tune")
+  gw=$(abinfo_value digital.gw)
+  alias=$(tune_alias "$tune" "$gw")
   scan=$(scan_source)
+  activity=$(recent_activity)
+  [[ "$activity" == \[* ]] || activity='[]'
   svc_dmr=$(svc_state dmrgateway)
   svc_mmdvm=$(svc_state mmdvm_bridge)
   svc_ab=$(svc_state analog_bridge)
@@ -149,6 +286,7 @@ do_status() {
   printf '"tune":"%s",' "$(json_escape "$tune")"
   printf '"tune_alias":"%s",' "$(json_escape "$alias")"
   printf '"scan_src":"%s",' "$(json_escape "$scan")"
+  printf '"activity":%s,' "$activity"
   printf '"services":{"dmrgateway":"%s","mmdvm_bridge":"%s","analog_bridge":"%s"},' \
     "$svc_dmr" "$svc_mmdvm" "$svc_ab"
   printf '"log":"%s"' "$(json_escape "$log")"
@@ -297,46 +435,62 @@ do_mode() {
   fi
 }
 
+read_gain() {
+  # $1 = ini key (tlvGain|usrpGain) -> numeric value or empty
+  local v
+  v=$(grep -iE "^[[:space:]]*$1[[:space:]]*=" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
+  if [[ "$v" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then printf '%s' "$v"; else printf ''; fi
+}
+
+gain_value_ok() {
+  # $1 = candidate value: numeric, 0.0-5.0
+  [[ "$1" =~ ^[0-9]+(\.[0-9]+)?$ ]] || return 1
+  python3 -c 'import sys; v = float(sys.argv[1]); sys.exit(0 if 0.0 <= v <= 5.0 else 1)' "$1" 2>/dev/null
+}
+
 do_gain() {
-  # ?action=gain -> {"tlv":"0.25","usrp":"4.00"}
-  # ?action=gain&tlv=0.50 -> set tlvGain, restart analog_bridge
-  # ?action=gain&usrp=3.00 -> set usrpGain, restart analog_bridge
-  local tlv usrp cur_tlv cur_usrp
+  # ?action=gain -> {"ok":true,"tlv":"0.25","usrp":"4.00"} (read from ini)
+  # ?action=gain&tlv=0.50 -> set via the gain-set helper (the only write
+  # path www-data is permitted; it restarts analog_bridge and verifies the
+  # read-back), then return the values re-read from the ini -- never just
+  # echo the request. A failed write returns ok:false. (The old code ran
+  # sudo sed/tee/systemctl directly; sudoers refused all of it and the
+  # failure was hidden, so the sliders never saved. Fixed Oct 21 2026.)
+  local tlv usrp cur_tlv cur_usrp out
   tlv=$(get_param tlv)
   usrp=$(get_param usrp)
-
-  # Read current values
-  cur_tlv=$(grep -iE "^tlvGain" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
-  cur_usrp=$(grep -iE "^usrpGain" "$ANALOG_INI" 2>/dev/null | head -1 | cut -d= -f2 | cut -d';' -f1 | tr -d ' ')
+  cur_tlv=$(read_gain tlvGain)
+  cur_usrp=$(read_gain usrpGain)
   [[ -z "$cur_tlv" ]] && cur_tlv="1.00"
   [[ -z "$cur_usrp" ]] && cur_usrp="1.00"
 
-  # If setting a value, validate and apply
-  if [[ -n "$tlv" ]]; then
-    if ! [[ "$tlv" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-      printf '{"ok":false,"error":"Invalid tlv gain"}'; return
+  if [[ -n "$tlv" || -n "$usrp" ]]; then
+    if [[ ! -x "$GAIN_SET" ]]; then
+      printf '{"ok":false,"error":"gain helper not installed - re-run install.sh"}'
+      return
     fi
-    # Validate range 0.0 to 5.0
-    if ! python3 -c "v=float('$tlv'); exit(0 if 0.0 <= v <= 5.0 else 1)" 2>/dev/null; then
-      printf '{"ok":false,"error":"Gain must be 0.0-5.0"}'; return
+    if [[ -n "$tlv" ]]; then
+      if ! gain_value_ok "$tlv"; then
+        printf '{"ok":false,"error":"tlv gain must be 0.0-5.0"}'; return
+      fi
+      out=$(sudo "$GAIN_SET" tlv "$tlv" 2>/dev/null)
+      if [[ $? -ne 0 ]]; then
+        printf '{"ok":false,"error":"gain-set failed for tlv"}'; return
+      fi
+      cur_tlv=$(read_gain tlvGain)
+      [[ -z "$cur_tlv" ]] && cur_tlv="$tlv"
     fi
-    sudo sed -i "s/^tlvGain *=.*/tlvGain = $tlv/" "$ANALOG_INI" 2>/dev/null || \
-      printf '\ntlvGain = %s\n' "$tlv" | sudo tee -a "$ANALOG_INI" >/dev/null
-    sudo systemctl restart analog_bridge 2>/dev/null
-    cur_tlv="$tlv"
-  fi
-
-  if [[ -n "$usrp" ]]; then
-    if ! [[ "$usrp" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-      printf '{"ok":false,"error":"Invalid usrp gain"}'; return
+    if [[ -n "$usrp" ]]; then
+      if ! gain_value_ok "$usrp"; then
+        printf '{"ok":false,"error":"usrp gain must be 0.0-5.0"}'; return
+      fi
+      out=$(sudo "$GAIN_SET" usrp "$usrp" 2>/dev/null)
+      if [[ $? -ne 0 ]]; then
+        printf '{"ok":false,"error":"gain-set failed for usrp"}'; return
+      fi
+      cur_usrp=$(read_gain usrpGain)
+      [[ -z "$cur_usrp" ]] && cur_usrp="$usrp"
     fi
-    if ! python3 -c "v=float('$usrp'); exit(0 if 0.0 <= v <= 5.0 else 1)" 2>/dev/null; then
-      printf '{"ok":false,"error":"Gain must be 0.0-5.0"}'; return
-    fi
-    sudo sed -i "s/^usrpGain *=.*/usrpGain = $usrp/" "$ANALOG_INI" 2>/dev/null || \
-      printf '\nusrpGain = %s\n' "$usrp" | sudo tee -a "$ANALOG_INI" >/dev/null
-    sudo systemctl restart analog_bridge 2>/dev/null
-    cur_usrp="$usrp"
   fi
 
   printf '{"ok":true,"tlv":"%s","usrp":"%s"}' "$cur_tlv" "$cur_usrp"
