@@ -321,6 +321,8 @@ let cardMode = null; // Mode of the currently shown mode-specific tune card
 // manual typing clears it. The CGI applies the YSF 8/9 prefix only when
 // this is true, so a manually typed value (e.g. 99999 parrot) tunes verbatim.
 let tuneFromList = false;
+let modeInFlight = false; // a mode switch request is awaiting the node's confirmation
+let modeHoldUntil = 0;    // epoch ms: status polls must not re-render the mode UI before this
 
 function buildPresets() {
   const grid = document.getElementById("preset-grid");
@@ -415,19 +417,27 @@ function setMode(mode) {
   }
   
   // Send to node. The CGI waits for the node to report the new mode before
-  // returning ok:true, so a fast refresh right after is safe (previously the
-  // CGI returned on exit code alone and a refresh would "jump back").
+  // returning ok:true. While the request is in flight (and for a hold
+  // window after it confirms), status polls must not re-render the mode UI:
+  // a poll landing mid-restart reads the node's transitional state and
+  // flips the cards back to the old mode (Sam's Oct 22 "fight" report).
   // Longer timeout: the mode wait can take up to ~12s after a chain restart.
+  modeInFlight = true;
   api("mode", { mode }, 30000).then(r => {
+    modeInFlight = false;
     if (r.ok) {
+      modeHoldUntil = Date.now() + 20000;
       document.getElementById("current-desc").textContent = `Mode ${mode} confirmed by node`;
       setTimeout(refreshStatus, 2000);
     } else {
+      modeHoldUntil = 0;
       document.getElementById("current-desc").textContent = "Mode change failed: " + (r.error || "unknown");
       // Revert button highlighting on failure (was optimistically updated above)
       refreshStatus();
     }
   }).catch(e => {
+    modeInFlight = false;
+    modeHoldUntil = 0;
     document.getElementById("current-desc").textContent = "Mode change error: " + e.message;
     // Revert button highlighting on error
     refreshStatus();
@@ -509,6 +519,10 @@ function loadGains() {
 
 function refreshStatus() {
   api("status").then(r => {
+    // While a mode switch is in flight or in its post-confirm hold window,
+    // the mode action owns the mode UI (buttons + cards below); a poll
+    // reading the node's mid-restart state must not flip them back.
+    const modeUiLocked = modeInFlight || Date.now() < modeHoldUntil;
     // Current tune
     document.getElementById("current-tg").textContent = r.tune || "---";
     document.getElementById("current-desc").textContent = r.tune_alias || r.mode || "";
@@ -519,14 +533,18 @@ function refreshStatus() {
     });
     
     // Mode buttons
-    document.querySelectorAll(".mode-btn").forEach(b => {
-      b.classList.toggle("active", b.dataset.mode === r.mode);
-    });
-    document.getElementById("dmr-card").classList.toggle("hidden", r.mode !== "DMR");
-    
-    // Mode-specific tune card for non-DMR
+    if (!modeUiLocked) {
+      document.querySelectorAll(".mode-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.mode === r.mode);
+      });
+      document.getElementById("dmr-card").classList.toggle("hidden", r.mode !== "DMR");
+    }
+
+    // Mode-specific tune card for non-DMR (same mode-UI lock as above)
     const modeTuneCard = document.getElementById("mode-tune-card");
-    if (r.mode === "DMR") {
+    if (modeUiLocked) {
+      // A mode action owns the card right now; leave it as the action set it.
+    } else if (r.mode === "DMR") {
       modeTuneCard.classList.add("hidden");
     } else {
       modeTuneCard.classList.remove("hidden");
