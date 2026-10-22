@@ -323,6 +323,8 @@ let cardMode = null; // Mode of the currently shown mode-specific tune card
 let tuneFromList = false;
 let modeInFlight = false; // a mode switch request is awaiting the node's confirmation
 let modeHoldUntil = 0;    // epoch ms: status polls must not re-render the mode UI before this
+let tuneHoldUntil = 0;    // epoch ms: status polls must not repaint the CURRENT tune before this
+let tuneHoldTg = "";      // the tuned value the hold protects (status form, e.g. 894122)
 
 function buildPresets() {
   const grid = document.getElementById("preset-grid");
@@ -367,8 +369,13 @@ function tune(tgid) {
   // costs the CGI up to ~3 attempts x 8s ack-wait.
   api("tune", { tgid, for_mode: "DMR" }, 45000).then(r => {
     if (r.ok) {
-      const tries = (r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)";
+      const tries = r.verified
+        ? ((r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)")
+        : " (acknowledged)";
       document.getElementById("current-desc").textContent = `Tuned to ${tgid}${tries}`;
+      document.getElementById("current-tg").textContent = tgid;
+      tuneHoldTg = r.tuned_as || tgid;
+      tuneHoldUntil = Date.now() + 20000;
       setTimeout(refreshStatus, 2500);
     } else {
       document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
@@ -457,8 +464,13 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
   api("tune", { tgid: val, for_mode: cardMode || "", from_list: tuneFromList ? "1" : "" }, 45000).then(r => {
     if (r.ok) {
       const switched = r.mode_switched ? `Switched to ${cardMode} + tuned to ` : "Tuned to ";
-      const tries = (r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)";
+      const tries = r.verified
+        ? ((r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)")
+        : " (acknowledged)";
       document.getElementById("current-desc").textContent = switched + val + tries;
+      document.getElementById("current-tg").textContent = val;
+      tuneHoldTg = r.tuned_as || val;
+      tuneHoldUntil = Date.now() + 20000;
       // Fast post-action refresh: the CGI verified the tune, so show the
       // node's real state now instead of waiting for the 15s poll.
       setTimeout(refreshStatus, 2500);
@@ -523,9 +535,17 @@ function refreshStatus() {
     // the mode action owns the mode UI (buttons + cards below); a poll
     // reading the node's mid-restart state must not flip them back.
     const modeUiLocked = modeInFlight || Date.now() < modeHoldUntil;
-    // Current tune
-    document.getElementById("current-tg").textContent = r.tune || "---";
-    document.getElementById("current-desc").textContent = r.tune_alias || r.mode || "";
+    // Current tune. Held briefly after a successful tune: the status
+    // sources still report the LAST transmission's TG until the next
+    // key-up, and repainting from them erased the just-verified tune and
+    // showed the old network again (Sam's Oct 22 YSF report). The hold
+    // clears early once status agrees with the tuned value.
+    if (r.tune === tuneHoldTg) tuneHoldUntil = 0;
+    const tuneHeld = Date.now() < tuneHoldUntil && r.tune !== tuneHoldTg;
+    if (!tuneHeld) {
+      document.getElementById("current-tg").textContent = r.tune || "---";
+      document.getElementById("current-desc").textContent = r.tune_alias || r.mode || "";
+    }
     
     // Highlight current preset
     document.querySelectorAll(".preset-btn").forEach(b => {
