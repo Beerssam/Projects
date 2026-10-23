@@ -1,0 +1,14 @@
+[Unit]
+Description=USRP2M17 -- M17 reflector bridge for AllStar node 1998 (KF0RIZ)
+After=network-online.target asterisk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/log/usrp2m17 /var/lib/usrp2m17
+ExecStart=/usr/local/bin/USRP2M17 /etc/USRP2M17.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
