@@ -38,6 +38,15 @@ GAIN_SET="$(dirname "$0" 2>/dev/null)/gain-set.sh"
 # journal, which www-data cannot, and reports BM/TGIF/KS-DMR login state.
 NET_STATUS="$(dirname "$0" 2>/dev/null)/net-status.sh"
 [[ -x "$NET_STATUS" ]] || NET_STATUS="/var/www/cgi-bin/net-status.sh"
+# Privileged M17 bridge helper (same pattern): controls the USRP2M17 bridge
+# (reflector switching, connect/disconnect, node-1998 link) -- M17 is NOT a
+# DVSwitch mode (no version of DVSwitch has it), so it lives outside the
+# mode/tune machinery entirely. See allstar-dmr/m17/DESIGN.md.
+M17_SWITCH="$(dirname "$0" 2>/dev/null)/m17-switch.sh"
+[[ -x "$M17_SWITCH" ]] || M17_SWITCH="/var/www/cgi-bin/m17-switch.sh"
+# USRP2M17 config (env override for testing). Read directly by the CGI for
+# status display; only the helper may write it.
+M17_INI="${M17_INI:-/etc/USRP2M17.ini}"
 # MMDVM_Bridge log directory (env override for testing). The bridge logs
 # real in/out transmissions to files here; unlike the systemd journal,
 # these are readable by www-data.
@@ -375,9 +384,23 @@ network_states() {
     "$(svc_state nxdngateway)" "$(svc_state ircddbgatewayd)"
 }
 
+m17_block() {
+  # JSON object contents for the status "m17" field: USRP2M17 service state
+  # plus the reflector/module from the ini's [M17 Network] Name line. Cheap
+  # (no sudo, no asterisk) so it can ride every status poll; the linked
+  # state needs Asterisk and is only in the action=m17 status response.
+  local name ref mod
+  name=$(grep -E '^[[:space:]]*Name[[:space:]]*=' "$M17_INI" 2>/dev/null | head -1 \
+         | cut -d= -f2 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  ref="${name%% *}"; mod=""
+  [[ "$name" == *" "* ]] && mod="${name##* }"
+  printf '"service":"%s","reflector":"%s","module":"%s"' \
+    "$(svc_state usrp2m17)" "$(json_escape "$ref")" "$(json_escape "$mod")"
+}
+
 # --- actions ---
 do_status() {
-  local mode tune alias scan svc_dmr svc_mmdvm svc_ab log gw activity nets
+  local mode tune alias scan svc_dmr svc_mmdvm svc_ab svc_m17 log gw activity nets
   mode=$(current_mode)
   tune=$(current_tune)
   gw=$(abinfo_value digital.gw)
@@ -388,6 +411,7 @@ do_status() {
   svc_dmr=$(svc_state dmrgateway)
   svc_mmdvm=$(svc_state mmdvm_bridge)
   svc_ab=$(svc_state analog_bridge)
+  svc_m17=$(svc_state usrp2m17)
   log=$(recent_log)
 
   printf '{'
@@ -396,12 +420,70 @@ do_status() {
   printf '"tune_alias":"%s",' "$(json_escape "$alias")"
   printf '"scan_src":"%s",' "$(json_escape "$scan")"
   printf '"activity":%s,' "$activity"
-  printf '"services":{"dmrgateway":"%s","mmdvm_bridge":"%s","analog_bridge":"%s"},' \
-    "$svc_dmr" "$svc_mmdvm" "$svc_ab"
+  printf '"services":{"dmrgateway":"%s","mmdvm_bridge":"%s","analog_bridge":"%s","usrp2m17":"%s"},' \
+    "$svc_dmr" "$svc_mmdvm" "$svc_ab" "$svc_m17"
   nets=$(network_states)
   printf '"nets":{%s},' "$nets"
+  printf '"m17":{%s},' "$(m17_block)"
   printf '"log":"%s"' "$(json_escape "$log")"
   printf '}'
+}
+
+do_m17() {
+  # ?action=m17&op=status|switch|connect|disconnect|link|unlink
+  #   switch also takes &name=<reflector>&module=<A-Z>.
+  # All work goes through the privileged m17-switch helper, which prints
+  # key=value lines; the CGI validates inputs, runs it, and renders the
+  # result as JSON -- including honest ok:false on any helper failure.
+  local op name module out rc k v
+  local service="" reflector="" mod="" address="" port="" linked="" note=""
+  op=$(get_param op)
+  case "$op" in
+    status|switch|connect|disconnect|link|unlink) ;;
+    *) printf '{"ok":false,"error":"Invalid m17 op"}'; return ;;
+  esac
+  if [[ ! -x "$M17_SWITCH" ]]; then
+    if [[ "$op" == "status" ]]; then
+      # Degraded status without the helper: ini + service state only.
+      printf '{"ok":true,"op":"status","m17":{%s},"linked":"unknown","note":"m17 helper not installed - re-run install.sh"}' \
+        "$(m17_block)"
+      return
+    fi
+    printf '{"ok":false,"error":"m17 helper not installed - re-run install.sh"}'
+    return
+  fi
+  if [[ "$op" == "switch" ]]; then
+    name=$(get_param name)
+    module=$(get_param module)
+    # The helper re-validates and resolves the address server-side; this
+    # allowlist just keeps junk out of the sudo call entirely.
+    if ! [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,23}$ ]]; then
+      printf '{"ok":false,"error":"Invalid reflector name"}'; return
+    fi
+    if ! [[ "$module" =~ ^[A-Z]$ ]]; then
+      printf '{"ok":false,"error":"Invalid module (A-Z)"}'; return
+    fi
+    out=$(sudo "$M17_SWITCH" switch "$name" "$module" 2>/dev/null); rc=$?
+  else
+    out=$(sudo "$M17_SWITCH" "$op" 2>/dev/null); rc=$?
+  fi
+  while IFS='=' read -r k v; do
+    case "$k" in
+      service)   service="$v" ;;
+      reflector) reflector="$v" ;;
+      module)    mod="$v" ;;
+      address)   address="$v" ;;
+      port)      port="$v" ;;
+      linked)    linked="$v" ;;
+      note)      note="$v" ;;
+    esac
+  done <<< "$out"
+  printf '{"ok":%s,"op":"%s","service":"%s","reflector":"%s","module":"%s","address":"%s","port":"%s","linked":"%s","note":"%s"}' \
+    "$([[ $rc -eq 0 ]] && echo true || echo false)" "$op" \
+    "$(json_escape "$service")" "$(json_escape "$reflector")" \
+    "$(json_escape "$mod")" "$(json_escape "$address")" \
+    "$(json_escape "$port")" "$(json_escape "$linked")" \
+    "$(json_escape "$note")"
 }
 
 do_live() {
@@ -959,5 +1041,6 @@ case "$action" in
   mode)       do_mode ;;
   reflectors) do_reflectors ;;
   gain)       do_gain ;;
+  m17)        do_m17 ;;
   *)          printf '{"ok":false,"error":"Unknown action"}' ;;
 esac
