@@ -29,17 +29,22 @@ redact_copy() {
   [[ -f "$src" ]] || return 0
   mkdir -p "$(dirname "$dst")"
   case "$src" in
-    */users)  # allmon3 users file: name:hash -- keep names, drop hashes
-      sed -E 's/^([^:]+):.*/\1:__REDACTED__/' "$src" > "$dst" ;;
+    */users|*/.htpasswd)  # credential stores: name:hash or name|hash --
+      # keep names, drop hashes (Allmon3 users uses '|', htpasswd uses ':')
+      sed -E 's/^([^:|]+)[:|].*/\1:__REDACTED__/' "$src" > "$dst" ;;
     *.php|*.inc)  # php config: blank quoted values on sensitive lines
-      sed -E '/(password|passwd|passphrase|secret|api[-_]?key|token|dbpass)/I s/(["'"'"'])[^"'"'"']*(["'"'"'])/\1__REDACTED__\2/g' "$src" > "$dst" ;;
+      sed -E '/(password|passwd|passphrase|secret|api[-_]?key|user[-_]?key|token|dbpass)/I s/(["'"'"'])[^"'"'"']*(["'"'"'])/\1__REDACTED__\2/g' "$src" > "$dst" ;;
     *)  # ini/conf/yaml: value after = or : on sensitive lines.
         # Keyword match, plus a boundary rule for bare "pass" (dbpass,
-        # scan-pass) that deliberately does NOT touch keys like PassAllPC.
+        # scan-pass) that deliberately does NOT touch keys like PassAllPC,
+        # plus start-of-line bare keys (pass=, UserKey:) that the boundary
+        # rule misses -- all three misses leaked in the Oct 23 v2 snapshot.
       sed -E \
-        -e 's/^([[:space:]]*[^=]*(password|passwd|passphrase|secret|api[-_]?key|token|dbpass)[^=]*=[[:space:]]*).*/\1__REDACTED__/I' \
+        -e 's/^([[:space:]]*(pass|passwd|password|passphrase|secret|key|userkey|apikey)[[:space:]]*=).*/\1__REDACTED__/I' \
+        -e 's/^([[:space:]]*(pass|passwd|password|passphrase|secret|key|userkey|apikey)[[:space:]]*:[[:space:]]+).*/\1__REDACTED__/I' \
+        -e 's/^([[:space:]]*[^=]*(password|passwd|passphrase|secret|api[-_]?key|user[-_]?key|auth[-_]?key|token|dbpass)[^=]*=[[:space:]]*).*/\1__REDACTED__/I' \
         -e 's/^([[:space:]]*[^=]*([^a-zA-Z]pass|dbpass)[^=]*=[[:space:]]*).*/\1__REDACTED__/I' \
-        -e 's/^([[:space:]]*[^:]*(password|passwd|passphrase|secret|api[-_]?key|token|dbpass)[^:]*:[[:space:]]+).*/\1__REDACTED__/I' \
+        -e 's/^([[:space:]]*[^:]*(password|passwd|passphrase|secret|api[-_]?key|user[-_]?key|auth[-_]?key|token|dbpass)[^:]*:[[:space:]]+).*/\1__REDACTED__/I' \
         -e 's/^([[:space:]]*[^:]*([^a-zA-Z]pass|dbpass)[^:]*:[[:space:]]+).*/\1__REDACTED__/I' \
         "$src" > "$dst" ;;
   esac
@@ -57,7 +62,7 @@ redact_tree() {
     for pat in "$@"; do case "$rel" in $pat) skip=1 ;; esac; done
     [[ $skip -eq 1 ]] && continue
     case "$rel" in
-      *.ini|*.conf|*.cfg|*.inc|*.php|*.yaml|*.yml|*/users)
+      *.ini|*.conf|*.cfg|*.inc|*.php|*.yaml|*.yml|*/users|*/.htpasswd)
         redact_copy "$src/$rel" "$dst/$rel" ;;
       *)
         mkdir -p "$dst/$(dirname "$rel")"
