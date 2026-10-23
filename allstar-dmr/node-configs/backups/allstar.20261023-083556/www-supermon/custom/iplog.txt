@@ -1,0 +1,5 @@
+
+Network dynamic WAN IP change log:
+------- ------- --- -- ------ ----
+Dec 27 18:00:20 EST 2022 (No IP, network down)
+Jun 20 22:20:10 CDT 2025 75.34.226.75
