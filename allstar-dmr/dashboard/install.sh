@@ -7,11 +7,13 @@
 # What it does:
 #   1. Backs up any existing control page / CGI / helpers.
 #   2. Copies dvswitch-control.html to the Apache web root.
-#   3. Copies dvswitch-control.sh, mode-switch.sh, gain-set.sh and
-#      net-status.sh to the CGI bin and makes them executable.
+#   3. Copies dvswitch-control.sh, mode-switch.sh, gain-set.sh,
+#      net-status.sh and m17-switch.sh to the CGI bin and makes them
+#      executable.
 #   4. Ensures Apache CGI is enabled and reloads Apache.
 #   5. Adds a sudoers rule so the CGI can run dvswitch.sh (tune/mode) and
-#      the mode-switch / gain-set / net-status helpers without a password.
+#      the mode-switch / gain-set / net-status / m17-switch helpers
+#      without a password.
 #
 # The panel is then at: http://<node-ip>/dvswitch-control.html
 set -euo pipefail
@@ -24,12 +26,14 @@ CGI_SRC="$SCRIPT_DIR/dvswitch-control.sh"
 HELPER_SRC="$SCRIPT_DIR/mode-switch.sh"
 GAIN_SRC="$SCRIPT_DIR/gain-set.sh"
 NET_SRC="$SCRIPT_DIR/net-status.sh"
+M17_SRC="$SCRIPT_DIR/m17-switch.sh"
 
 [[ -f "$HTML_SRC" ]] || { echo "Missing: $HTML_SRC" >&2; exit 1; }
 [[ -f "$CGI_SRC" ]] || { echo "Missing: $CGI_SRC" >&2; exit 1; }
 [[ -f "$HELPER_SRC" ]] || { echo "Missing: $HELPER_SRC" >&2; exit 1; }
 [[ -f "$GAIN_SRC" ]] || { echo "Missing: $GAIN_SRC" >&2; exit 1; }
 [[ -f "$NET_SRC" ]] || { echo "Missing: $NET_SRC" >&2; exit 1; }
+[[ -f "$M17_SRC" ]] || { echo "Missing: $M17_SRC" >&2; exit 1; }
 
 # Find Apache web root. The CGI dir is ALWAYS /var/www/cgi-bin because that is
 # what the Apache conf below (ScriptAlias /cgi-bin/ /var/www/cgi-bin/) serves.
@@ -70,6 +74,10 @@ if [[ -f "$CGI_DIR/net-status.sh" ]]; then
   cp "$CGI_DIR/net-status.sh" "$CGI_DIR/net-status.sh.bak.$TS"
   echo "== Backed up existing net-status helper"
 fi
+if [[ -f "$CGI_DIR/m17-switch.sh" ]]; then
+  cp "$CGI_DIR/m17-switch.sh" "$CGI_DIR/m17-switch.sh.bak.$TS"
+  echo "== Backed up existing m17-switch helper"
+fi
 
 # Install
 cp "$HTML_SRC" "$WEB_ROOT/dvswitch-control.html"
@@ -77,16 +85,17 @@ cp "$CGI_SRC" "$CGI_DIR/dvswitch-control.sh"
 cp "$HELPER_SRC" "$CGI_DIR/mode-switch.sh"
 cp "$GAIN_SRC" "$CGI_DIR/gain-set.sh"
 cp "$NET_SRC" "$CGI_DIR/net-status.sh"
-chmod 755 "$CGI_DIR/dvswitch-control.sh" "$CGI_DIR/mode-switch.sh" "$CGI_DIR/gain-set.sh" "$CGI_DIR/net-status.sh"
+cp "$M17_SRC" "$CGI_DIR/m17-switch.sh"
+chmod 755 "$CGI_DIR/dvswitch-control.sh" "$CGI_DIR/mode-switch.sh" "$CGI_DIR/gain-set.sh" "$CGI_DIR/net-status.sh" "$CGI_DIR/m17-switch.sh"
 # Remove stale copies from the old (wrong) location if they exist there, so a
 # future reader doesn't mistake them for the live ones.
-for stale in dvswitch-control.sh mode-switch.sh gain-set.sh net-status.sh; do
+for stale in dvswitch-control.sh mode-switch.sh gain-set.sh net-status.sh m17-switch.sh; do
   if [[ -f /usr/lib/cgi-bin/$stale && "$CGI_DIR" != "/usr/lib/cgi-bin" ]]; then
     rm -f "/usr/lib/cgi-bin/$stale"
     echo "== Removed stale $stale from /usr/lib/cgi-bin"
   fi
 done
-echo "== Installed HTML, CGI, mode-switch and gain-set helpers"
+echo "== Installed HTML, CGI and helpers (mode-switch, gain-set, net-status, m17-switch)"
 
 # Apache CGI config (if not already present)
 if ! grep -q "dvswitch-control" /etc/apache2/conf-enabled/*.conf 2>/dev/null; then
@@ -108,10 +117,10 @@ fi
 SUDOERS_FILE="/etc/sudoers.d/dvswitch-control"
 DVS=$(find /opt /usr/local -name "dvswitch.sh" 2>/dev/null | head -1)
 if [[ -n "$DVS" ]]; then
-  printf 'www-data ALL=(ALL) NOPASSWD: %s tune *, %s mode *, %s/mode-switch.sh *, %s/gain-set.sh *, %s/net-status.sh *\n' \
-    "$DVS" "$DVS" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" > "$SUDOERS_FILE"
+  printf 'www-data ALL=(ALL) NOPASSWD: %s tune *, %s mode *, %s/mode-switch.sh *, %s/gain-set.sh *, %s/net-status.sh *, %s/m17-switch.sh *\n' \
+    "$DVS" "$DVS" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" > "$SUDOERS_FILE"
   chmod 440 "$SUDOERS_FILE"
-  echo "== Wrote sudoers rule for www-data -> dvswitch.sh + mode-switch.sh + gain-set.sh + net-status.sh"
+  echo "== Wrote sudoers rule for www-data -> dvswitch.sh + mode-switch.sh + gain-set.sh + net-status.sh + m17-switch.sh"
 else
   echo "!! dvswitch.sh not found; sudoers rule skipped (tune/mode will fail)" >&2
 fi
