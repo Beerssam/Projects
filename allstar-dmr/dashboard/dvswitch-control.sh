@@ -337,8 +337,14 @@ def on(st):
     return st["begin"] > st["end"] and (now - st["begin"]) <= 300
 
 print(json.dumps({
-    "tx_on": on(tx), "tx_label": tx["label"] if on(tx) else "",
-    "rx_on": on(rx), "rx_label": rx["label"] if on(rx) else "",
+    # Sam's convention (Oct 22 2026): the lamps speak from the NODE's RF
+    # perspective, not the digital network's. When the operator keys up,
+    # the node is RECEIVING him -- that is the bridge's "Begin TX" stream
+    # (his audio entering the network). When network audio plays out to
+    # him, the node is TRANSMITTING -- the bridge's "received network"
+    # stream. The fields are deliberately crossed here; do not "fix" back.
+    "rx_on": on(tx), "rx_label": tx["label"] if on(tx) else "",
+    "tx_on": on(rx), "tx_label": rx["label"] if on(rx) else "",
 }))
 PYEOF
 }
