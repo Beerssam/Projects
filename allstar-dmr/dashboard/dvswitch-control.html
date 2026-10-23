@@ -113,7 +113,7 @@
 
 <div class="header">
   <h1>KF0RIZ Digital Control</h1>
-  <div class="callsign">AllStar Node 625730 &bull; DVSwitch 1999</div>
+  <div class="callsign">AllStar Node 625730 &bull; DVSwitch 1999 &bull; M17 1998</div>
 </div>
 
 <div class="txrx-strip">
@@ -183,6 +183,39 @@
   <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="mode-tune-hint"></div>
 </div>
 
+<div class="card hidden" id="m17-card">
+  <h2>M17 Bridge (Node 1998)</h2>
+  <div class="status-row"><span class="label">Bridge</span><span id="m17-svc">...</span></div>
+  <div class="status-row"><span class="label">Reflector</span><span id="m17-cur">...</span></div>
+  <div class="status-row"><span class="label">Node 1998</span><span id="m17-linked">...</span></div>
+  <div style="margin:12px 0 8px;">
+    <select id="m17-reflector-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+      <option value="">-- Choose reflector --</option>
+    </select>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="m17-reflector-input" placeholder="Or type reflector (e.g. M17-M17)" autocomplete="off"
+      style="flex:1; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+    <select id="m17-module-select" style="flex:0 0 86px; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:10px;">
+    <button class="preset-btn" id="m17-switch-btn" style="flex:1; text-align:center;"><span class="alias">Switch Reflector</span></button>
+    <button class="preset-btn" id="m17-disconnect-btn" style="flex:1; text-align:center;"><span class="alias">Disconnect</span></button>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="preset-btn" id="m17-link-btn" style="flex:1; text-align:center;"><span class="alias">Link 1998</span></button>
+    <button class="preset-btn" id="m17-unlink-btn" style="flex:1; text-align:center;"><span class="alias">Unlink 1998</span></button>
+    <button class="preset-btn" id="m17-connect-btn" style="flex:1; text-align:center;"><span class="alias">Start Bridge</span></button>
+  </div>
+  <div style="font-size:0.85em; color:#94a3b8; margin-top:10px;" id="m17-msg"></div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+    M17 runs on its own bridge (USRP2M17) via node 1998 — it is not a
+    DVSwitch mode. Link either 1998 or 1999 to 625730, not both at once.
+    A reflector switch restarts the bridge and takes a few seconds; the
+    1998 link stays up.
+  </div>
+</div>
+
 <div class="card">
   <h2>Services</h2>
   <div id="services">
@@ -194,10 +227,12 @@
     <div class="status-row"><span class="label">P25 Gateway</span><span id="net-p25">...</span></div>
     <div class="status-row"><span class="label">NXDN Gateway</span><span id="net-nxdn">...</span></div>
     <div class="status-row"><span class="label">D-STAR Gateway</span><span id="net-dstar">...</span></div>
+    <div class="status-row"><span class="label">M17 Reflector</span><span id="net-m17">...</span></div>
     <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin:10px 0 4px;">Processes</div>
     <div class="status-row"><span class="label">DMRGateway</span><span id="svc-dmrgateway">...</span></div>
     <div class="status-row"><span class="label">MMDVM_Bridge</span><span id="svc-mmdvm">...</span></div>
     <div class="status-row"><span class="label">Analog_Bridge</span><span id="svc-analog">...</span></div>
+    <div class="status-row"><span class="label">USRP2M17 (M17 Bridge)</span><span id="svc-usrp2m17">...</span></div>
   </div>
   <button class="refresh-btn" onclick="refreshStatus()">Refresh Status</button>
 </div>
@@ -321,6 +356,7 @@ let cardMode = null; // Mode of the currently shown mode-specific tune card
 // manual typing clears it. The CGI applies the YSF 8/9 prefix only when
 // this is true, so a manually typed value (e.g. 99999 parrot) tunes verbatim.
 let tuneFromList = false;
+let m17Open = false; // the M17 bridge panel is shown (M17 is not a DVSwitch mode)
 let modeInFlight = false; // a mode switch request is awaiting the node's confirmation
 let modeHoldUntil = 0;    // epoch ms: status polls must not re-render the mode UI before this
 let tuneHoldUntil = 0;    // epoch ms: status polls must not repaint the CURRENT tune before this
@@ -386,6 +422,12 @@ function tune(tgid) {
 }
 
 function setMode(mode) {
+  // M17 is not a DVSwitch mode (no version of DVSwitch has it): its button
+  // opens the M17 bridge panel and never sends a mode command to the
+  // DVSwitch chain.
+  if (mode === "M17") { openM17Panel(); return; }
+  m17Open = false;
+  document.getElementById("m17-card").classList.add("hidden");
   document.querySelectorAll(".mode-btn").forEach(b => {
     b.classList.toggle("active", b.dataset.mode === mode);
   });
@@ -486,6 +528,95 @@ document.getElementById("mode-tune-btn").addEventListener("click", () => {
 // may carry the YSF 8/9 prefix.
 document.getElementById("mode-tune-input").addEventListener("input", () => { tuneFromList = false; });
 
+// ---------- M17 bridge panel ----------
+// M17 runs on USRP2M17 + private node 1998, controlled via ?action=m17.
+// Reflector switches are restart-based in the helper and verified against
+// the reflector's ACKN before the CGI reports success.
+function openM17Panel() {
+  m17Open = true;
+  document.querySelectorAll(".mode-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === "M17");
+  });
+  document.getElementById("dmr-card").classList.add("hidden");
+  document.getElementById("mode-tune-card").classList.add("hidden");
+  document.getElementById("m17-card").classList.remove("hidden");
+  cardMode = null;
+  const mod = document.getElementById("m17-module-select");
+  if (!mod.options.length) {
+    for (let c = 65; c <= 90; c++) {
+      const o = document.createElement("option");
+      o.value = o.textContent = String.fromCharCode(c);
+      mod.appendChild(o);
+    }
+    mod.value = "A";
+  }
+  const sel = document.getElementById("m17-reflector-select");
+  if (sel.options.length <= 1) {
+    sel.innerHTML = '<option value="">Loading...</option>';
+    loadReflectors("M17", sel);
+  }
+  sel.onchange = () => {
+    const inp = document.getElementById("m17-reflector-input");
+    if (sel.value) inp.value = sel.value;
+  };
+  refreshM17();
+}
+
+function refreshM17() {
+  api("m17", { op: "status" }, 15000).then(r => {
+    const svcEl = document.getElementById("m17-svc");
+    const curEl = document.getElementById("m17-cur");
+    const linkEl = document.getElementById("m17-linked");
+    if (!r.ok) {
+      svcEl.textContent = "Error";
+      svcEl.className = "status-bad";
+      return;
+    }
+    // Helper-backed status is flat; the degraded (no-helper) form nests
+    // the state under .m17 and reports linked as a sibling field.
+    const m = r.m17 ? { ...r.m17, linked: r.linked } : r;
+    svcEl.textContent = m.service === "active" ? "Running" : "Stopped";
+    svcEl.className = m.service === "active" ? "status-ok" : "status-bad";
+    curEl.textContent = m.reflector
+      ? (m.reflector + (m.module ? " · module " + m.module : ""))
+      : "—";
+    linkEl.textContent = m.linked === "yes" ? "Linked to 625730"
+      : (m.linked === "no" ? "Not linked" : "Unknown");
+    linkEl.className = m.linked === "yes" ? "status-ok" : "status-warn";
+    const inp = document.getElementById("m17-reflector-input");
+    if (m.reflector && !inp.value) inp.value = m.reflector;
+    if (m.module) document.getElementById("m17-module-select").value = m.module;
+  }).catch(() => {});
+}
+
+function m17Action(op, params = {}) {
+  const msg = document.getElementById("m17-msg");
+  msg.textContent = "Working...";
+  const timeout = (op === "switch" || op === "connect") ? 45000 : 25000;
+  api("m17", { op, ...params }, timeout).then(r => {
+    msg.textContent = r.ok
+      ? (r.note || "Done")
+      : ("Failed: " + (r.note || r.error || "unknown"));
+    refreshM17();
+    setTimeout(refreshStatus, 1000);
+  }).catch(e => { msg.textContent = "Error: " + e.message; });
+}
+
+document.getElementById("m17-switch-btn").onclick = () => {
+  const name = document.getElementById("m17-reflector-input").value.trim()
+    || document.getElementById("m17-reflector-select").value;
+  const module = document.getElementById("m17-module-select").value || "A";
+  if (!name) {
+    document.getElementById("m17-msg").textContent = "Pick or type a reflector first.";
+    return;
+  }
+  m17Action("switch", { name, module });
+};
+document.getElementById("m17-disconnect-btn").onclick = () => m17Action("disconnect");
+document.getElementById("m17-connect-btn").onclick = () => m17Action("connect");
+document.getElementById("m17-link-btn").onclick = () => m17Action("link");
+document.getElementById("m17-unlink-btn").onclick = () => m17Action("unlink");
+
 function updateGainLabel(which) {
   const slider = document.getElementById(which + "-slider");
   document.getElementById(which + "-val").textContent = parseFloat(slider.value).toFixed(2);
@@ -552,8 +683,9 @@ function refreshStatus() {
       b.classList.toggle("current", b.dataset.tgid === r.tune);
     });
     
-    // Mode buttons
-    if (!modeUiLocked) {
+    // Mode buttons (left alone while the M17 panel is open: M17 is not a
+    // DVSwitch mode, so the node's reported mode must not repaint over it)
+    if (!modeUiLocked && !m17Open) {
       document.querySelectorAll(".mode-btn").forEach(b => {
         b.classList.toggle("active", b.dataset.mode === r.mode);
       });
@@ -562,8 +694,9 @@ function refreshStatus() {
 
     // Mode-specific tune card for non-DMR (same mode-UI lock as above)
     const modeTuneCard = document.getElementById("mode-tune-card");
-    if (modeUiLocked) {
-      // A mode action owns the card right now; leave it as the action set it.
+    if (modeUiLocked || m17Open) {
+      // A mode action (or the M17 panel) owns the cards right now; leave
+      // them as the action set them.
     } else if (r.mode === "DMR") {
       modeTuneCard.classList.add("hidden");
     } else {
@@ -600,6 +733,7 @@ function refreshStatus() {
     svc("svc-dmrgateway", r.services.dmrgateway);
     svc("svc-mmdvm", r.services.mmdvm_bridge);
     svc("svc-analog", r.services.analog_bridge);
+    svc("svc-usrp2m17", r.services.usrp2m17 || "unknown");
 
     // Networks: DMR login states (connected/down/unknown, with the local
     // time of the last login verdict) and gateway unit states.
@@ -623,6 +757,20 @@ function refreshStatus() {
     net("net-p25", n.p25);
     net("net-nxdn", n.nxdn);
     net("net-dstar", n.dstar);
+    // M17 reflector state rides the top-level m17 block (not a gateway):
+    // "Connected" here means the USRP2M17 bridge process is up and the
+    // ini points at the shown reflector.
+    const m17el = document.getElementById("net-m17");
+    if (m17el && r.m17) {
+      if (r.m17.service === "active") {
+        m17el.textContent = "Connected · " + (r.m17.reflector || "?")
+          + (r.m17.module ? " " + r.m17.module : "");
+        m17el.className = "status-ok";
+      } else {
+        m17el.textContent = "Bridge down";
+        m17el.className = "status-bad";
+      }
+    }
     
     // Real source TG from scan logs
     const realSrc = document.getElementById("real-src");
@@ -649,6 +797,8 @@ function refreshStatus() {
     } else {
       live.classList.add("hidden");
     }
+    // Keep the M17 panel's status fresh on the same poll cadence.
+    if (m17Open) refreshM17();
   }).catch(e => {
     document.getElementById("log-box").textContent = "Status error: " + e.message;
   });
