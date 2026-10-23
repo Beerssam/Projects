@@ -1,0 +1,121 @@
+; MMDVM_Bridge.ini -- KF0RIZ multi-mode bridge
+; Callsign: KF0RIZ | DMR ID: 3209686
+; All digital modes: DMR, YSF, P25, NXDN, D-Star
+; Built from official DVSwitch example Oct 16 2026
+;
+; CRASH FIXES (verified against the real V1.6.8 binary, Oct 18 2026):
+;      Any non-empty value works: DMRGateway's local RPTL handshake accepts
+;      it without verification on loopback, so this marker is copy-ready.
+;   2. [NXDN] Enable MUST be 0 -- enabling the NXDN mode segfaults the
+;      V1.6.8 binary during NXDN TLV/USRP init (verified: clean 8s run with
+;      NXDN off, segfault with it on). NXDN stays disabled until the binary
+;      is fixed; P25 mode is unaffected and stays enabled.
+;
+; Gateway ports (verified from node backups Oct 15 2026):
+;   DMRGateway:   127.0.0.1:62032 (RptPort), binds 62031
+;   YSFGateway:   127.0.0.1:3200 (RptPort)
+;   P25Gateway:   127.0.0.1:32010 (RptPort)
+;   NXDNGateway:  127.0.0.1:14021 (RptPort)
+
+[General]
+Callsign=KF0RIZ
+Id=3209686
+Timeout=180
+Duplex=0
+
+[Info]
+RXFrequency=446000000
+TXFrequency=446000000
+Power=1
+Latitude=39.01
+Longitude=-94.77
+Height=0
+Location=Kansas
+Description=KF0RIZ Multi-Mode
+URL=https://github.com/Beerssam/Projects
+
+[Log]
+DisplayLevel=1
+FileLevel=2
+FilePath=/var/log/mmdvm
+FileRoot=MMDVM_Bridge
+
+[DMR Id Lookup]
+File=/var/lib/mmdvm/DMRIds.dat
+Time=24
+
+[NXDN Id Lookup]
+File=/var/lib/mmdvm/NXDN.csv
+Time=24
+
+[Modem]
+Port=/dev/null
+RSSIMappingFile=/dev/null
+Trace=0
+Debug=0
+
+[D-Star]
+Enable=1
+Module=B
+
+[DMR]
+Enable=1
+ColorCode=1
+EmbeddedLCOnly=1
+DumpTAData=0
+
+[System Fusion]
+Enable=1
+
+[P25]
+Enable=1
+NAC=293
+
+[NXDN]
+; Keep Enable=0: NXDN mode segfaults MMDVM_Bridge V1.6.8 at startup
+; (during NXDN TLV init -- verified Oct 18 2026). Revisit with a newer binary.
+Enable=1
+RAN=1
+
+[D-Star Network]
+Enable=1
+GatewayAddress=127.0.0.1
+GatewayPort=20010
+LocalPort=20011
+Debug=0
+
+[DMR Network]
+Enable=1
+Address=127.0.0.1
+Port=62031
+Jitter=360
+Local=62032
+; (DMRNetwork.cpp:77) and SIGABRTs on startup without it. Any value works --
+; DMRGateway's local RPTL handshake does not verify it. Copy-ready as-is.
+Slot1=1
+Slot2=1
+Debug=0
+
+[System Fusion Network]
+Enable=1
+LocalAddress=127.0.0.1
+LocalPort=3200
+GatewayAddress=127.0.0.1
+GatewayPort=4200
+Debug=0
+
+[P25 Network]
+Enable=0
+GatewayAddress=127.0.0.1
+GatewayPort=32010
+LocalAddress=127.0.0.1
+LocalPort=32011
+Debug=0
+
+[NXDN Network]
+Enable=1
+LocalAddress=127.0.0.1
+LocalPort=14022
+GatewayAddress=127.0.0.1
+GatewayPort=14021
+Debug=0
