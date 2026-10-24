@@ -306,3 +306,36 @@ unlinked, stopped bridge is inert.
 - Node install: ~10 minutes plus the Asterisk restart.
 - On-air acceptance test: needs Sam at the radio with a second M17 ear
   (phone app or WPSD hotspot).
+
+## 10. Addendum (Oct 23 2026, post-install)
+
+Field results from the install night and the dashboard batch that
+followed:
+
+- **Node 1998 link works from the panel** — the `rpt fun 625730 *31998`
+  form was verified live ("Linked to 625730"). The same control was
+  later added for node 1999 (Link/Unlink 1999 in a Node Links card),
+  with mutual exclusion enforced in the helper: linking one pseudo-node
+  unlinks the other first.
+- **USRP2M17 never sends DISC** (its `writeUnlink()` is dead code; the
+  SIGTERM exit just closes the socket). A restart-while-connected
+  therefore leaves the reflector holding the previous session, and it
+  NACKs the new CONN as a duplicate until that session times out. The
+  helper's switch/connect now retries through NACKs (restarts after
+  30s and 45s pauses), and the dashboard reports the reflector's real
+  ack state from the bridge log (`ack=acked|nacked`) instead of
+  equating "service active" with "connected".
+- **Reflector list source:** the panel list is served from the shared
+  DVRef registry cache (`/var/lib/usrp2m17/reflectors.json`, primed at
+  install, refreshed by the helper). A second independent DVRef pull
+  from the CGI throttled against the first (DVRef allows ~1 request per
+  IP per 6h per resource) and left the panel showing only its 1-entry
+  hardcoded fallback.
+- **RX/TX lamps cover M17:** the live endpoint also parses the
+  USRP2M17 log. Sam's key-up (USRP side) has true begin/end lines; the
+  M17 side logs only end-of-transmission lines, so network audio
+  flashes the TX lamp briefly after each transmission ends rather than
+  lighting for its full length.
+- **M17 parrot:** none exists in the DVRef mrefd registry (checked Oct
+  23 2026, 131 reflectors — no echo/parrot service). The second-ear
+  check (DroidStar / WPSD) remains the audio verification method.
