@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>KF0RIZ Digital Control</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0;
+    min-height: 100vh; padding: 12px;
+  }
+  .header {
+    text-align: center; padding: 12px 0 16px;
+    border-bottom: 1px solid #1e293b; margin-bottom: 16px;
+  }
+  .header h1 { font-size: 1.3em; color: #38bdf8; font-weight: 600; }
+  .header .callsign { font-size: 0.85em; color: #64748b; margin-top: 4px; }
+  .txrx-strip { display: flex; gap: 8px; margin-bottom: 12px; }
+  .lamp {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 10px;
+    background: #1e293b; border: 1px solid #334155;
+    color: #64748b; font-weight: 700; font-size: 0.95em;
+    transition: all 0.2s; overflow: hidden;
+  }
+  .lamp .lamp-dot {
+    flex: 0 0 auto; width: 12px; height: 12px; border-radius: 50%;
+    background: #334155;
+  }
+  .lamp .lamp-label {
+    font-weight: 500; font-size: 0.8em; color: #94a3b8;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .lamp.on-rx { border-color: #22c55e; color: #22c55e; }
+  .lamp.on-rx .lamp-dot { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+  .lamp.on-tx { border-color: #ef4444; color: #ef4444; }
+  .lamp.on-tx .lamp-dot { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+  .card {
+    background: #1e293b; border-radius: 12px;
+    padding: 16px; margin-bottom: 12px;
+    border: 1px solid #334155;
+  }
+  .card h2 {
+    font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px;
+    color: #64748b; margin-bottom: 12px;
+  }
+  .mode-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mode-btn {
+    flex: 1 1 0; min-width: 70px;
+    padding: 14px 8px; border-radius: 10px;
+    border: 2px solid #334155; background: #0f172a;
+    color: #94a3b8; font-size: 0.95em; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .mode-btn.active {
+    border-color: #38bdf8; background: #0c4a6e; color: #fff;
+  }
+  .mode-btn:active { transform: scale(0.97); }
+  .preset-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .preset-btn {
+    padding: 14px 10px; border-radius: 10px;
+    border: 1px solid #334155; background: #0f172a;
+    color: #e2e8f0; cursor: pointer; text-align: left;
+    transition: all 0.15s;
+  }
+  .preset-btn:active { transform: scale(0.97); background: #1e3a5f; }
+  .preset-btn .alias { font-size: 0.95em; font-weight: 600; display: block; }
+  .preset-btn .tgid { font-size: 0.8em; color: #64748b; display: block; margin-top: 2px; }
+  .preset-btn.current { border-color: #22c55e; background: #14532d; }
+  .status-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9em; }
+  .status-row .label { color: #64748b; }
+  .status-ok { color: #22c55e; font-weight: 600; }
+  .status-bad { color: #ef4444; font-weight: 600; }
+  .status-warn { color: #f59e0b; font-weight: 600; }
+  .tune-display {
+    text-align: center; padding: 16px;
+    background: #0f172a; border-radius: 10px; margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .tune-display .tg {
+    font-size: 2em; font-weight: 700; color: #38bdf8;
+    word-break: break-all; overflow-wrap: break-word; max-width: 100%;
+  }
+  .tune-display .desc { font-size: 0.9em; color: #94a3b8; margin-top: 4px; }
+  .tune-display .real-src { font-size: 0.85em; color: #f59e0b; margin-top: 8px; }
+  .log-box {
+    background: #0f172a; border-radius: 8px; padding: 10px;
+    font-family: monospace; font-size: 0.75em;
+    max-height: 150px; overflow-y: auto; color: #94a3b8;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .refresh-btn {
+    width: 100%; padding: 12px; border-radius: 10px;
+    border: 1px solid #334155; background: #1e293b;
+    color: #38bdf8; font-size: 0.95em; font-weight: 600;
+    cursor: pointer; margin-top: 8px;
+  }
+  .hidden { display: none; }
+  .dmr-networks { display: flex; gap: 8px; margin-bottom: 12px; }
+  .net-btn {
+    flex: 1; padding: 10px; border-radius: 8px;
+    border: 1px solid #334155; background: #0f172a;
+    color: #94a3b8; font-size: 0.85em; font-weight: 600;
+    cursor: pointer;
+  }
+  .net-btn.active { border-color: #38bdf8; color: #fff; background: #0c4a6e; }
+  /* .active = the selected network (preset filter + custom-tune prefix). */
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>KF0RIZ Digital Control</h1>
+  <div class="callsign">AllStar Node 625730 &bull; DVSwitch 1999 &bull; M17 1998</div>
+</div>
+
+<div class="txrx-strip">
+  <div class="lamp" id="lamp-rx"><span class="lamp-dot"></span><span>RX</span><span class="lamp-label" id="lamp-rx-label"></span></div>
+  <div class="lamp" id="lamp-tx"><span class="lamp-dot"></span><span>TX</span><span class="lamp-label" id="lamp-tx-label"></span></div>
+</div>
+
+<div class="card">
+  <h2>Current</h2>
+  <div class="tune-display">
+    <div class="tg" id="current-tg">---</div>
+    <div class="desc" id="current-desc">Loading...</div>
+    <div class="real-src hidden" id="real-src"></div>
+    <div class="real-src hidden" id="live-line"></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Digital Mode</h2>
+  <div class="mode-row" id="mode-row">
+    <button class="mode-btn" data-mode="DMR">DMR</button>
+    <button class="mode-btn" data-mode="YSF">YSF</button>
+    <button class="mode-btn" data-mode="P25">P25</button>
+    <button class="mode-btn" data-mode="NXDN">NXDN</button>
+    <button class="mode-btn" data-mode="DSTAR">D-STAR</button>
+    <button class="mode-btn" data-mode="M17">M17</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Node Links</h2>
+  <div class="status-row"><span class="label">DVSwitch · Node 1999</span><span id="link1999-state">...</span></div>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="preset-btn" id="link1999-btn" style="flex:1; text-align:center;"><span class="alias">Link 1999</span></button>
+    <button class="preset-btn" id="unlink1999-btn" style="flex:1; text-align:center;"><span class="alias">Unlink 1999</span></button>
+  </div>
+  <div class="status-row" style="margin-top:14px;"><span class="label">M17 Bridge · Node 1998</span><span id="link1998-state">...</span></div>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="preset-btn" id="link1998-btn" style="flex:1; text-align:center;"><span class="alias">Link 1998</span></button>
+    <button class="preset-btn" id="unlink1998-btn" style="flex:1; text-align:center;"><span class="alias">Unlink 1998</span></button>
+  </div>
+  <div style="font-size:0.85em; color:#94a3b8; margin-top:10px;" id="links-msg"></div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+    Linking one node unlinks the other first — 1998 and 1999 are never
+    linked to 625730 at the same time.
+  </div>
+</div>
+
+<div class="card" id="dmr-card">
+  <h2>DMR Quick Tune</h2>
+  <div class="dmr-networks">
+    <button class="net-btn" data-net="bm">BrandMeister</button>
+    <button class="net-btn" data-net="tgif">TGIF</button>
+    <button class="net-btn" data-net="ksdmr">KS-DMR</button>
+  </div>
+  <div class="preset-grid" id="preset-grid">
+    <!-- Populated by JS -->
+  </div>
+  <div style="margin-top:12px; display:flex; gap:8px;">
+    <input type="text" id="custom-tg" inputmode="numeric" placeholder="Enter TG (e.g. 777)"
+      style="flex:1; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+    <button class="preset-btn" id="custom-tune-btn" style="flex:0 0 auto; padding:12px 20px; text-align:center;">
+      <span class="alias">Tune</span>
+    </button>
+  </div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+    The tune path always sends a group call; service TGs that need a private
+    call (BM Parrot 9990) are converted by the gateway automatically.
+  </div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="prefix-hint">
+    Blue = network you're tuned to &middot; orange = prefix for the box below.
+  </div>
+</div>
+
+<div class="card hidden" id="mode-tune-card">
+  <h2 id="mode-tune-title">Tune</h2>
+  <div style="margin-bottom:8px;">
+    <select id="mode-reflector-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+      <option value="">-- Choose from list --</option>
+    </select>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="mode-tune-input" placeholder="Or enter manually..." inputmode="text" autocomplete="off">
+    <button class="tune-btn" id="mode-tune-btn">Tune</button>
+  </div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;" id="mode-tune-hint"></div>
+</div>
+
+<div class="card hidden" id="m17-card">
+  <h2>M17 Bridge (Node 1998)</h2>
+  <div class="status-row"><span class="label">Bridge</span><span id="m17-svc">...</span></div>
+  <div class="status-row"><span class="label">Reflector</span><span id="m17-cur">...</span></div>
+  <div class="status-row"><span class="label">Node 1998</span><span id="m17-linked">...</span></div>
+  <div style="margin:12px 0 8px;">
+    <select id="m17-reflector-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+      <option value="">-- Choose reflector --</option>
+    </select>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <input type="text" id="m17-reflector-input" placeholder="Type reflector (e.g. M17-M17)" autocomplete="off"
+      style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+    <select id="m17-module-select" style="flex:0 0 74px; min-width:0; padding:12px 4px; text-align:center; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:10px;">
+    <button class="preset-btn" id="m17-switch-btn" style="flex:1; text-align:center;"><span class="alias">Switch Reflector</span></button>
+    <button class="preset-btn" id="m17-disconnect-btn" style="flex:1; text-align:center;"><span class="alias">Disconnect</span></button>
+  </div>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="preset-btn" id="m17-link-btn" style="flex:1; text-align:center;"><span class="alias">Link 1998</span></button>
+    <button class="preset-btn" id="m17-unlink-btn" style="flex:1; text-align:center;"><span class="alias">Unlink 1998</span></button>
+    <button class="preset-btn" id="m17-connect-btn" style="flex:1; text-align:center;"><span class="alias">Start Bridge</span></button>
+  </div>
+  <div style="font-size:0.85em; color:#94a3b8; margin-top:10px;" id="m17-msg"></div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+    M17 runs on its own bridge (USRP2M17) via node 1998 — it is not a
+    DVSwitch mode. Link either 1998 or 1999 to 625730, not both at once.
+    A reflector switch restarts the bridge and takes a few seconds; the
+    1998 link stays up.
+  </div>
+</div>
+
+<div class="card">
+  <h2>Services</h2>
+  <div id="services">
+    <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:4px;">Networks</div>
+    <div class="status-row"><span class="label">BrandMeister</span><span id="net-bm">...</span></div>
+    <div class="status-row"><span class="label">TGIF</span><span id="net-tgif">...</span></div>
+    <div class="status-row"><span class="label">KS-DMR</span><span id="net-ksdmr">...</span></div>
+    <div class="status-row"><span class="label">YSF Gateway</span><span id="net-ysf">...</span></div>
+    <div class="status-row"><span class="label">P25 Gateway</span><span id="net-p25">...</span></div>
+    <div class="status-row"><span class="label">NXDN Gateway</span><span id="net-nxdn">...</span></div>
+    <div class="status-row"><span class="label">D-STAR Gateway</span><span id="net-dstar">...</span></div>
+    <div class="status-row"><span class="label">M17 Reflector</span><span id="net-m17">...</span></div>
+    <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin:10px 0 4px;">Processes</div>
+    <div class="status-row"><span class="label">DMRGateway</span><span id="svc-dmrgateway">...</span></div>
+    <div class="status-row"><span class="label">MMDVM_Bridge</span><span id="svc-mmdvm">...</span></div>
+    <div class="status-row"><span class="label">Analog_Bridge</span><span id="svc-analog">...</span></div>
+    <div class="status-row"><span class="label">USRP2M17 (M17 Bridge)</span><span id="svc-usrp2m17">...</span></div>
+  </div>
+  <button class="refresh-btn" onclick="refreshStatus()">Refresh Status</button>
+</div>
+
+<div class="card">
+  <h2>Audio Levels</h2>
+  <div style="margin-bottom: 12px;">
+    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+      <span style="font-size: 0.9em; color: #94a3b8;">TX to Digital (tlvGain)</span>
+      <span id="tlv-val" style="font-weight: 600; color: #38bdf8;">...</span>
+    </div>
+    <input type="range" id="tlv-slider" min="0" max="2" step="0.05" value="1"
+           style="width: 100%;" oninput="updateGainLabel('tlv')"
+           onchange="setGain('tlv', this.value)">
+    <div style="font-size: 0.75em; color: #64748b; margin-top: 2px;">Your voice → DMR/YSF. Lower if reports say hot/distorted.</div>
+  </div>
+  <div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+      <span style="font-size: 0.9em; color: #94a3b8;">RX from Digital (usrpGain)</span>
+      <span id="usrp-val" style="font-weight: 600; color: #38bdf8;">...</span>
+    </div>
+    <input type="range" id="usrp-slider" min="0" max="5" step="0.1" value="1"
+           style="width: 100%;" oninput="updateGainLabel('usrp')"
+           onchange="setGain('usrp', this.value)">
+    <div style="font-size: 0.75em; color: #64748b; margin-top: 2px;">Digital → your radio. Raise if digital sounds quiet.</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent DMR Activity</h2>
+  <div class="log-box" id="log-box">Loading...</div>
+  <button class="refresh-btn" onclick="refreshStatus()">Refresh</button>
+</div>
+
+<script>
+const PRESETS = [
+  { tgid: "4000777", alias: "TGIF 777 (scan)", net: "tgif" },
+  { tgid: "7003120", alias: "KS-DMR 3120", net: "ksdmr" },
+  { tgid: "91",     alias: "BM 91 Worldwide", net: "bm" },
+  { tgid: "93",     alias: "BM 93 N. America", net: "bm" },
+  { tgid: "3100",   alias: "BM 3100 USA", net: "bm" },
+  { tgid: "3120",   alias: "BM 3120 Kansas", net: "bm" },
+  { tgid: "9990",   alias: "BM Parrot (private)", net: "bm" },
+  { tgid: "4000",   alias: "Disconnect", net: "bm" },
+];
+
+// Reflector lists: fetched live from the node's host files via CGI.
+// Hardcoded fallback if the host files aren't found on the node.
+const REFLECTORS_FALLBACK = {
+  "YSF": [
+    { id: "12345", name: "US America Link" },
+    { id: "67890", name: "US Ka9q" },
+  ],
+  "P25": [
+    { id: "10200", name: "North America" },
+    { id: "10300", name: "Worldwide" },
+  ],
+  "NXDN": [
+    { id: "65000", name: "Worldwide" },
+  ],
+  "DSTAR": [
+    { id: "REF001C", name: "REF001 C (Worldwide)" },
+    { id: "REF030C", name: "REF030 C (USA)" },
+    { id: "XRF002A", name: "XRF002 A" },
+  ],
+  "M17": [
+    { id: "M17-M17", name: "M17-M17 (Experimental)" },
+  ],
+};
+const reflectorCache = {};
+
+function loadReflectors(mode, selectEl) {
+  // mode: "YSF", "P25", "NXDN", "DSTAR" (uppercase); CGI wants lowercase
+  const key = mode.toLowerCase();
+  const fill = (list) => {
+    selectEl.innerHTML = '<option value="">-- Choose from list --</option>';
+    list.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r.id;
+      opt.textContent = r.id + " - " + r.name;
+      selectEl.appendChild(opt);
+    });
+  };
+  if (reflectorCache[key]) {
+    fill(reflectorCache[key]);
+    return;
+  }
+  // Try the node first; fall back to hardcoded list
+  api("reflectors", { mode: key }).then(r => {
+    if (r.ok && r.reflectors && r.reflectors.length > 0) {
+      reflectorCache[key] = r.reflectors;
+      fill(r.reflectors);
+    } else {
+      fill(REFLECTORS_FALLBACK[mode] || []);
+    }
+  }).catch(() => {
+    fill(REFLECTORS_FALLBACK[mode] || []);
+  });
+}
+
+const CGI = "/cgi-bin/dvswitch-control.sh";
+
+function api(action, params = {}, timeoutMs = 10000) {
+  const q = new URLSearchParams({ action, ...params });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(`${CGI}?${q}`, { signal: controller.signal })
+    .then(r => {
+      clearTimeout(timeout);
+      return r.json();
+    })
+    .catch(e => {
+      clearTimeout(timeout);
+      throw e;
+    });
+}
+
+let selectedNet = "bm"; // Default to BrandMeister
+let cardMode = null; // Mode of the currently shown mode-specific tune card
+// True when the current tune-box value came from the reflector dropdown;
+// manual typing clears it. The CGI applies the YSF 8/9 prefix only when
+// this is true, so a manually typed value (e.g. 99999 parrot) tunes verbatim.
+let tuneFromList = false;
+let m17Open = false; // the M17 bridge panel is shown (M17 is not a DVSwitch mode)
+let modeInFlight = false; // a mode switch request is awaiting the node's confirmation
+let modeHoldUntil = 0;    // epoch ms: status polls must not re-render the mode UI before this
+let tuneHoldUntil = 0;    // epoch ms: status polls must not repaint the CURRENT tune before this
+let tuneHoldTg = "";      // the tuned value the hold protects (status form, e.g. 894122)
+
+function buildPresets() {
+  const grid = document.getElementById("preset-grid");
+  grid.innerHTML = "";
+  // Filter presets by selected network (Disconnect shows for all)
+  PRESETS.filter(p => p.net === selectedNet || p.tgid === "4000").forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "preset-btn";
+    btn.dataset.tgid = p.tgid;
+    btn.dataset.net = p.net;
+    btn.innerHTML = `<span class="alias">${p.alias}</span><span class="tgid">${p.tgid}</span>`;
+    btn.onclick = () => tune(p.tgid);
+    grid.appendChild(btn);
+  });
+  // Update network button highlights
+  document.querySelectorAll(".net-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.net === selectedNet);
+    b.classList.remove("sel");
+  });
+  // Update prefix hint
+  const hints = {
+    "bm": "BM: enter TG directly (e.g. 91)",
+    "tgif": "TGIF: enter TG, 4+zero-pad added (e.g. 777 → 4000777)",
+    "ksdmr": "KS-DMR: enter TG, 7+zero-pad added (e.g. 3120 → 7003120)",
+  };
+  document.getElementById("prefix-hint").textContent = hints[selectedNet] || "";
+}
+
+function tune(tgid) {
+  // Optimistically update the Current display
+  document.getElementById("current-tg").textContent = tgid;
+  document.getElementById("current-desc").textContent = "Tuning...";
+  // Highlight the tapped preset
+  document.querySelectorAll(".preset-btn").forEach(b => {
+    b.classList.toggle("current", b.dataset.tgid === tgid);
+  });
+  // DMR presets always belong to DMR mode; send for_mode so the CGI
+  // switches if the node is in a different mode (prevents silent wrong-mode tune)
+  // The CGI verifies the tune landed (bridge ack + retry) and only then
+  // reports ok:true, so a fast refresh right after shows the node's real
+  // state instead of waiting for the 15s poll. Longer timeout: a lost tune
+  // costs the CGI up to ~3 attempts x 8s ack-wait.
+  api("tune", { tgid, for_mode: "DMR" }, 45000).then(r => {
+    if (r.ok) {
+      const tries = r.verified
+        ? ((r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)")
+        : " (acknowledged)";
+      document.getElementById("current-desc").textContent = `Tuned to ${tgid}${tries}`;
+      document.getElementById("current-tg").textContent = tgid;
+      tuneHoldTg = r.tuned_as || tgid;
+      tuneHoldUntil = Date.now() + 20000;
+      setTimeout(refreshStatus, 2500);
+    } else {
+      document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
+    }
+  }).catch(e => {
+    document.getElementById("current-desc").textContent = "Tune error: " + e.message;
+  });
+}
+
+function setMode(mode) {
+  // M17 is not a DVSwitch mode (no version of DVSwitch has it): its button
+  // opens the M17 bridge panel and never sends a mode command to the
+  // DVSwitch chain.
+  if (mode === "M17") { openM17Panel(); return; }
+  m17Open = false;
+  document.getElementById("m17-card").classList.add("hidden");
+  document.querySelectorAll(".mode-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === mode);
+  });
+  document.getElementById("dmr-card").classList.toggle("hidden", mode !== "DMR");
+  
+  // Show mode-specific tune card for non-DMR modes
+  const modeTuneCard = document.getElementById("mode-tune-card");
+  const modeTuneTitle = document.getElementById("mode-tune-title");
+  const modeTuneInput = document.getElementById("mode-tune-input");
+  const modeTuneHint = document.getElementById("mode-tune-hint");
+  
+  if (mode === "DMR") {
+    modeTuneCard.classList.add("hidden");
+    cardMode = null;
+  } else {
+    modeTuneCard.classList.remove("hidden");
+    cardMode = mode;
+    const configs = {
+      "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list, or type the full dial number (e.g. 894122 for reflector 94122; 99999 for parrot)" },
+      "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
+      "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Pick from list or enter TG" },
+      "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Pick from list or enter reflector" },
+      "M17":  { title: "M17 Reflector", placeholder: "e.g. M17-M17", hint: "Pick from list or enter reflector" },
+    };
+    const cfg = configs[mode] || { title: mode + " Tune", placeholder: "Enter value...", hint: "" };
+    modeTuneTitle.textContent = cfg.title;
+    modeTuneInput.placeholder = cfg.placeholder;
+    modeTuneInput.value = "";
+    tuneFromList = false;
+    modeTuneHint.textContent = cfg.hint;
+    // Populate reflector dropdown from the node's host files (cached)
+    const sel = document.getElementById("mode-reflector-select");
+    sel.innerHTML = '<option value="">Loading...</option>';
+    loadReflectors(mode, sel);
+    sel.onchange = () => { if (sel.value) { modeTuneInput.value = sel.value; tuneFromList = true; } };
+  }
+  
+  // Send to node. The CGI waits for the node to report the new mode before
+  // returning ok:true. While the request is in flight (and for a hold
+  // window after it confirms), status polls must not re-render the mode UI:
+  // a poll landing mid-restart reads the node's transitional state and
+  // flips the cards back to the old mode (Sam's Oct 22 "fight" report).
+  // Longer timeout: the mode wait can take up to ~12s after a chain restart.
+  modeInFlight = true;
+  api("mode", { mode }, 30000).then(r => {
+    modeInFlight = false;
+    if (r.ok) {
+      modeHoldUntil = Date.now() + 20000;
+      document.getElementById("current-desc").textContent = `Mode ${mode} confirmed by node`;
+      setTimeout(refreshStatus, 2000);
+    } else {
+      modeHoldUntil = 0;
+      document.getElementById("current-desc").textContent = "Mode change failed: " + (r.error || "unknown");
+      // Revert button highlighting on failure (was optimistically updated above)
+      refreshStatus();
+    }
+  }).catch(e => {
+    modeInFlight = false;
+    modeHoldUntil = 0;
+    document.getElementById("current-desc").textContent = "Mode change error: " + e.message;
+    // Revert button highlighting on error
+    refreshStatus();
+  });
+}
+
+// Tune for non-DMR modes (YSF/P25/NXDN/D-STAR)
+document.getElementById("mode-tune-btn").addEventListener("click", () => {
+  const input = document.getElementById("mode-tune-input");
+  const val = input.value.trim();
+  if (!val) return;
+  document.getElementById("current-desc").textContent = "Tuning...";
+  // for_mode tells the CGI which mode this value belongs to, so the tune
+  // can't silently land in the wrong mode if the mode switch lagged/failed.
+  // from_list tells the CGI the value came from the reflector dropdown, so
+  // the YSF 8/9 prefix applies; a manually typed value tunes verbatim.
+  api("tune", { tgid: val, for_mode: cardMode || "", from_list: tuneFromList ? "1" : "" }, 45000).then(r => {
+    if (r.ok) {
+      const switched = r.mode_switched ? `Switched to ${cardMode} + tuned to ` : "Tuned to ";
+      const tries = r.verified
+        ? ((r.attempts > 1) ? ` (verified after ${r.attempts} tries)` : " (verified)")
+        : " (acknowledged)";
+      document.getElementById("current-desc").textContent = switched + val + tries;
+      document.getElementById("current-tg").textContent = val;
+      tuneHoldTg = r.tuned_as || val;
+      tuneHoldUntil = Date.now() + 20000;
+      // Fast post-action refresh: the CGI verified the tune, so show the
+      // node's real state now instead of waiting for the 15s poll.
+      setTimeout(refreshStatus, 2500);
+    } else {
+      document.getElementById("current-desc").textContent = "Tune failed: " + (r.error || "unknown");
+    }
+  }).catch(e => {
+    document.getElementById("current-desc").textContent = "Tune error: " + e.message;
+  });
+  tuneFromList = false; // one-shot: a tune consumes the dropdown flag
+});
+// Typing in the box clears the dropdown flag -- only an actual dropdown pick
+// may carry the YSF 8/9 prefix.
+document.getElementById("mode-tune-input").addEventListener("input", () => { tuneFromList = false; });
+
+// ---------- M17 bridge panel ----------
+// M17 runs on USRP2M17 + private node 1998, controlled via ?action=m17.
+// Reflector switches are restart-based in the helper and verified against
+// the reflector's ACKN before the CGI reports success.
+function openM17Panel() {
+  m17Open = true;
+  document.querySelectorAll(".mode-btn").forEach(b => {
+    b.classList.toggle("active", b.dataset.mode === "M17");
+  });
+  document.getElementById("dmr-card").classList.add("hidden");
+  document.getElementById("mode-tune-card").classList.add("hidden");
+  document.getElementById("m17-card").classList.remove("hidden");
+  cardMode = null;
+  const mod = document.getElementById("m17-module-select");
+  if (!mod.options.length) {
+    for (let c = 65; c <= 90; c++) {
+      const o = document.createElement("option");
+      o.value = o.textContent = String.fromCharCode(c);
+      mod.appendChild(o);
+    }
+    mod.value = "A";
+  }
+  const sel = document.getElementById("m17-reflector-select");
+  if (sel.options.length <= 1) {
+    sel.innerHTML = '<option value="">Loading...</option>';
+    loadReflectors("M17", sel);
+  }
+  sel.onchange = () => {
+    const inp = document.getElementById("m17-reflector-input");
+    if (sel.value) inp.value = sel.value;
+  };
+  refreshM17();
+}
+
+function refreshM17() {
+  api("m17", { op: "status" }, 15000).then(r => {
+    const svcEl = document.getElementById("m17-svc");
+    const curEl = document.getElementById("m17-cur");
+    const linkEl = document.getElementById("m17-linked");
+    if (!r.ok) {
+      svcEl.textContent = "Error";
+      svcEl.className = "status-bad";
+      return;
+    }
+    // Helper-backed status is flat; the degraded (no-helper) form nests
+    // the state under .m17 and reports linked as a sibling field.
+    const m = r.m17 ? { ...r.m17, linked: r.linked, linked1999: r.linked1999 } : r;
+    renderLinkStates(m);
+    svcEl.textContent = m.service === "active" ? "Running" : "Stopped";
+    svcEl.className = m.service === "active" ? "status-ok" : "status-bad";
+    // ack = the reflector's last word in the bridge log. Service-active
+    // alone does not mean connected (a NACKed bridge keeps running).
+    const ackNote = m.ack === "acked" ? " · connected"
+      : (m.ack === "nacked" ? " · REFUSED (NACK)" : "");
+    curEl.textContent = m.reflector
+      ? (m.reflector + (m.module ? " · module " + m.module : "") + ackNote)
+      : "—";
+    curEl.className = m.ack === "nacked" ? "status-bad" : "";
+    linkEl.textContent = m.linked === "yes" ? "Linked to 625730"
+      : (m.linked === "no" ? "Not linked" : "Unknown");
+    linkEl.className = m.linked === "yes" ? "status-ok" : "status-warn";
+    const inp = document.getElementById("m17-reflector-input");
+    if (m.reflector && !inp.value) inp.value = m.reflector;
+    if (m.module) document.getElementById("m17-module-select").value = m.module;
+  }).catch(() => {});
+}
+
+function m17Action(op, params = {}) {
+  const msg = document.getElementById("m17-msg");
+  msg.textContent = "Working...";
+  // Switch/connect can take ~2 minutes worst case: if the reflector NACKs
+  // the new connection (it still holds the previous session -- USRP2M17
+  // never sends a disconnect), the helper waits and retries.
+  const timeout = (op === "switch" || op === "connect") ? 150000 : 25000;
+  api("m17", { op, ...params }, timeout).then(r => {
+    msg.textContent = r.ok
+      ? (r.note || "Done")
+      : ("Failed: " + (r.note || r.error || "unknown"));
+    refreshM17();
+    setTimeout(refreshStatus, 1000);
+  }).catch(e => { msg.textContent = "Error: " + e.message; });
+}
+
+// ---------- Node Links card (1999 DVSwitch + 1998 M17) ----------
+// Both link pairs run through the same helper status/action endpoint as
+// the M17 panel; linking one node unlinks the other first (helper-side).
+function renderLinkStates(m) {
+  const s1999 = document.getElementById("link1999-state");
+  const s1998 = document.getElementById("link1998-state");
+  if (!s1999 || !s1998) return;
+  const render = (el, v) => {
+    el.textContent = v === "yes" ? "Linked to 625730"
+      : (v === "no" ? "Not linked" : "Unknown");
+    el.className = v === "yes" ? "status-ok" : "status-warn";
+  };
+  render(s1999, m.linked1999);
+  render(s1998, m.linked);
+}
+
+function refreshLinks() {
+  api("m17", { op: "status" }, 15000).then(r => {
+    if (!r.ok) return;
+    const m = r.m17 ? { ...r.m17, linked: r.linked, linked1999: r.linked1999 } : r;
+    renderLinkStates(m);
+  }).catch(() => {});
+}
+
+function linkAction(op) {
+  const msg = document.getElementById("links-msg");
+  msg.textContent = "Working...";
+  api("m17", { op }, 30000).then(r => {
+    msg.textContent = r.ok
+      ? (r.note || "Done")
+      : ("Failed: " + (r.note || r.error || "unknown"));
+    renderLinkStates(r);
+    if (m17Open) refreshM17();
+    setTimeout(refreshStatus, 1000);
+  }).catch(e => { msg.textContent = "Error: " + e.message; });
+}
+
+document.getElementById("link1999-btn").onclick = () => linkAction("link1999");
+document.getElementById("unlink1999-btn").onclick = () => linkAction("unlink1999");
+document.getElementById("link1998-btn").onclick = () => linkAction("link");
+document.getElementById("unlink1998-btn").onclick = () => linkAction("unlink");
+
+document.getElementById("m17-switch-btn").onclick = () => {
+  const name = document.getElementById("m17-reflector-input").value.trim()
+    || document.getElementById("m17-reflector-select").value;
+  const module = document.getElementById("m17-module-select").value || "A";
+  if (!name) {
+    document.getElementById("m17-msg").textContent = "Pick or type a reflector first.";
+    return;
+  }
+  m17Action("switch", { name, module });
+};
+document.getElementById("m17-disconnect-btn").onclick = () => m17Action("disconnect");
+document.getElementById("m17-connect-btn").onclick = () => m17Action("connect");
+document.getElementById("m17-link-btn").onclick = () => m17Action("link");
+document.getElementById("m17-unlink-btn").onclick = () => m17Action("unlink");
+
+function updateGainLabel(which) {
+  const slider = document.getElementById(which + "-slider");
+  document.getElementById(which + "-val").textContent = parseFloat(slider.value).toFixed(2);
+}
+
+function setGain(which, value) {
+  const v = parseFloat(value).toFixed(2);
+  document.getElementById(which + "-val").textContent = v;
+  fetch(`cgi-bin/dvswitch-control.sh?action=gain&${which}=${v}`)
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) {
+        alert("Gain update failed: " + (d.error || "unknown"));
+        loadGains(); // snap the sliders back to what the node actually has
+        return;
+      }
+      // Show what the node read back from its ini, not just the request.
+      if (d.tlv !== undefined) {
+        document.getElementById("tlv-slider").value = d.tlv;
+        document.getElementById("tlv-val").textContent = parseFloat(d.tlv).toFixed(2);
+      }
+      if (d.usrp !== undefined) {
+        document.getElementById("usrp-slider").value = d.usrp;
+        document.getElementById("usrp-val").textContent = parseFloat(d.usrp).toFixed(2);
+      }
+    })
+    .catch(e => { alert("Gain update error: " + e.message); loadGains(); });
+}
+
+function loadGains() {
+  fetch("cgi-bin/dvswitch-control.sh?action=gain")
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        document.getElementById("tlv-slider").value = d.tlv;
+        document.getElementById("tlv-val").textContent = parseFloat(d.tlv).toFixed(2);
+        document.getElementById("usrp-slider").value = d.usrp;
+        document.getElementById("usrp-val").textContent = parseFloat(d.usrp).toFixed(2);
+      }
+    })
+    .catch(() => {});
+}
+
+function refreshStatus() {
+  api("status").then(r => {
+    // While a mode switch is in flight or in its post-confirm hold window,
+    // the mode action owns the mode UI (buttons + cards below); a poll
+    // reading the node's mid-restart state must not flip them back.
+    const modeUiLocked = modeInFlight || Date.now() < modeHoldUntil;
+    // Current tune. Held briefly after a successful tune: the status
+    // sources still report the LAST transmission's TG until the next
+    // key-up, and repainting from them erased the just-verified tune and
+    // showed the old network again (Sam's Oct 22 YSF report). The hold
+    // clears early once status agrees with the tuned value.
+    if (r.tune === tuneHoldTg) tuneHoldUntil = 0;
+    const tuneHeld = Date.now() < tuneHoldUntil && r.tune !== tuneHoldTg;
+    if (!tuneHeld) {
+      document.getElementById("current-tg").textContent = r.tune || "---";
+      document.getElementById("current-desc").textContent = r.tune_alias || r.mode || "";
+    }
+    
+    // Highlight current preset
+    document.querySelectorAll(".preset-btn").forEach(b => {
+      b.classList.toggle("current", b.dataset.tgid === r.tune);
+    });
+    
+    // Mode buttons (left alone while the M17 panel is open: M17 is not a
+    // DVSwitch mode, so the node's reported mode must not repaint over it)
+    if (!modeUiLocked && !m17Open) {
+      document.querySelectorAll(".mode-btn").forEach(b => {
+        b.classList.toggle("active", b.dataset.mode === r.mode);
+      });
+      document.getElementById("dmr-card").classList.toggle("hidden", r.mode !== "DMR");
+    }
+
+    // Mode-specific tune card for non-DMR (same mode-UI lock as above)
+    const modeTuneCard = document.getElementById("mode-tune-card");
+    if (modeUiLocked || m17Open) {
+      // A mode action (or the M17 panel) owns the cards right now; leave
+      // them as the action set them.
+    } else if (r.mode === "DMR") {
+      modeTuneCard.classList.add("hidden");
+    } else {
+      modeTuneCard.classList.remove("hidden");
+      const configs = {
+        "YSF":  { title: "YSF Reflector", placeholder: "e.g. 12345", hint: "Pick from list, or type the full dial number (e.g. 894122 for reflector 94122; 99999 for parrot)" },
+        "P25":  { title: "P25 Talkgroup", placeholder: "e.g. 10200", hint: "Pick from list or enter TG" },
+        "NXDN": { title: "NXDN Talkgroup", placeholder: "e.g. 65000", hint: "Pick from list or enter TG" },
+        "DSTAR":{ title: "D-STAR Reflector", placeholder: "e.g. REF001C", hint: "Pick from list or enter reflector" },
+        "M17":  { title: "M17 Reflector", placeholder: "e.g. M17-M17", hint: "Pick from list or enter reflector" },
+      };
+      const cfg = configs[r.mode] || { title: r.mode + " Tune", placeholder: "Enter value...", hint: "" };
+      document.getElementById("mode-tune-title").textContent = cfg.title;
+      document.getElementById("mode-tune-input").placeholder = cfg.placeholder;
+      document.getElementById("mode-tune-hint").textContent = cfg.hint;
+      // Populate reflector dropdown from node's host files (only if empty, to preserve user selection)
+      const sel = document.getElementById("mode-reflector-select");
+      if (sel.options.length <= 1) {
+        sel.innerHTML = '<option value="">Loading...</option>';
+        loadReflectors(r.mode, sel);
+        sel.onchange = () => {
+          const inp = document.getElementById("mode-tune-input");
+          if (sel.value) inp.value = sel.value;
+        };
+      }
+    }
+    
+    // Services
+    const svc = (id, state) => {
+      const el = document.getElementById(id);
+      el.textContent = state;
+      el.className = state === "active" ? "status-ok" : "status-bad";
+    };
+    svc("svc-dmrgateway", r.services.dmrgateway);
+    svc("svc-mmdvm", r.services.mmdvm_bridge);
+    svc("svc-analog", r.services.analog_bridge);
+    svc("svc-usrp2m17", r.services.usrp2m17 || "unknown");
+
+    // Networks: DMR login states (connected/down/unknown, with the local
+    // time of the last login verdict) and gateway unit states.
+    const net = (id, state, ts) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      let txt = "Unknown", cls = "status-warn";
+      if (state === "connected") { txt = "Connected" + (ts ? " · " + ts : ""); cls = "status-ok"; }
+      else if (state === "active") { txt = "Active"; cls = "status-ok"; }
+      else if (state === "down") { txt = "Down"; cls = "status-bad"; }
+      else if (state === "failed") { txt = "Failed"; cls = "status-bad"; }
+      else if (state === "inactive") { txt = "Inactive"; cls = "status-warn"; }
+      el.textContent = txt;
+      el.className = cls;
+    };
+    const n = r.nets || {};
+    net("net-bm", n.bm, n.bm_ts);
+    net("net-tgif", n.tgif, n.tgif_ts);
+    net("net-ksdmr", n.ksdmr, n.ksdmr_ts);
+    net("net-ysf", n.ysf);
+    net("net-p25", n.p25);
+    net("net-nxdn", n.nxdn);
+    net("net-dstar", n.dstar);
+    // M17 reflector state rides the top-level m17 block (not a gateway):
+    // "Connected" here means the USRP2M17 bridge process is up and the
+    // ini points at the shown reflector.
+    const m17el = document.getElementById("net-m17");
+    if (m17el && r.m17) {
+      const target = (r.m17.reflector || "?") + (r.m17.module ? " " + r.m17.module : "");
+      if (r.m17.service !== "active") {
+        m17el.textContent = "Bridge down";
+        m17el.className = "status-bad";
+      } else if (r.m17.ack === "nacked") {
+        // Running but the reflector refused us (stale-session NACK).
+        m17el.textContent = "Refused (NACK) · " + target;
+        m17el.className = "status-bad";
+      } else if (r.m17.ack === "acked") {
+        m17el.textContent = "Connected · " + target;
+        m17el.className = "status-ok";
+      } else {
+        m17el.textContent = "Running · " + target;
+        m17el.className = "status-warn";
+      }
+    }
+    
+    // Real source TG from scan logs
+    const realSrc = document.getElementById("real-src");
+    if (r.scan_src && r.scan_src !== r.tune) {
+      realSrc.classList.remove("hidden");
+      realSrc.textContent = `Heard on TG ${r.scan_src} (rewritten to ${r.tune})`;
+    } else {
+      realSrc.classList.add("hidden");
+    }
+    
+    // Recent activity (from the bridge log via the CGI; newest first).
+    // Falls back to the journal log text if activity is unavailable.
+    const act = (r.activity || []).filter(Boolean);
+    if (act.length) {
+      document.getElementById("log-box").textContent = act.join("\n");
+    } else {
+      document.getElementById("log-box").textContent = r.log || "No recent activity";
+    }
+    // Latest activity also surfaces on the Current card.
+    const live = document.getElementById("live-line");
+    if (act.length) {
+      live.classList.remove("hidden");
+      live.textContent = "Last activity: " + act[0];
+    } else {
+      live.classList.add("hidden");
+    }
+    // Keep the M17 panel's status fresh on the same poll cadence, and the
+    // Node Links card too (refreshM17 already renders the link states
+    // when the panel is open, so only fetch separately when it is not).
+    if (m17Open) refreshM17(); else refreshLinks();
+  }).catch(e => {
+    document.getElementById("log-box").textContent = "Status error: " + e.message;
+  });
+}
+
+document.querySelectorAll(".mode-btn").forEach(b => {
+  b.onclick = () => setMode(b.dataset.mode);
+});
+
+// NOTE: the DVSwitch chain (dvswitch.sh tune -> MMDVM_Bridge) can only emit
+// group-call frames, so there is no per-tune group/private switch. Service
+// TGs that require a private call (BM Parrot 9990) are converted to real
+// private calls by the DMRGateway private-call patch.
+
+function formatTg(input, net) {
+  const digits = input.replace(/\D/g, "");
+  if (!digits) return null;
+  // Already a full 7-digit dial string? Use as-is.
+  if (/^[47]\d{6}$/.test(digits)) return digits;
+  const num = parseInt(digits, 10);
+  if (isNaN(num)) return null;
+  if (net === "tgif")  return "4" + String(num).padStart(6, "0");
+  if (net === "ksdmr") return "7" + String(num).padStart(6, "0");
+  return String(num);  // BM: plain TG
+}
+
+document.getElementById("custom-tune-btn").onclick = () => {
+  const input = document.getElementById("custom-tg").value;
+  if (!selectedNet) {
+    document.getElementById("prefix-hint").textContent = "Pick a network first (BrandMeister / TGIF / KS-DMR).";
+    return;
+  }
+  const tgid = formatTg(input, selectedNet);
+  if (!tgid) {
+    document.getElementById("prefix-hint").textContent = "Enter a valid talkgroup number.";
+    return;
+  }
+  tune(tgid);
+};
+
+// Network buttons: select which network's presets to show + prefix for custom tune.
+// Single purpose: the blue highlight = your selection. Tapping re-builds the preset list.
+document.querySelectorAll(".net-btn").forEach(b => {
+  b.onclick = () => {
+    selectedNet = b.dataset.net;
+    buildPresets(); // Rebuilds grid and updates button highlights
+  };
+});
+
+function setLamp(which, on, label) {
+  const lamp = document.getElementById("lamp-" + which);
+  const lab = document.getElementById("lamp-" + which + "-label");
+  lamp.classList.toggle("on-" + which, !!on);
+  lab.textContent = on ? (label || "") : "";
+}
+
+function refreshLive() {
+  api("live").then(r => {
+    setLamp("rx", r.rx_on, r.rx_label);
+    setLamp("tx", r.tx_on, r.tx_label);
+  }).catch(() => {});
+}
+
+buildPresets();
+refreshStatus();
+refreshLive();
+loadGains();
+setInterval(refreshStatus, 15000);
+setInterval(refreshLive, 2500);
+</script>
+</body>
+</html>
