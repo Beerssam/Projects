@@ -143,6 +143,25 @@
   </div>
 </div>
 
+<div class="card">
+  <h2>Node Links</h2>
+  <div class="status-row"><span class="label">DVSwitch · Node 1999</span><span id="link1999-state">...</span></div>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="preset-btn" id="link1999-btn" style="flex:1; text-align:center;"><span class="alias">Link 1999</span></button>
+    <button class="preset-btn" id="unlink1999-btn" style="flex:1; text-align:center;"><span class="alias">Unlink 1999</span></button>
+  </div>
+  <div class="status-row" style="margin-top:14px;"><span class="label">M17 Bridge · Node 1998</span><span id="link1998-state">...</span></div>
+  <div style="display:flex; gap:8px; margin-top:8px;">
+    <button class="preset-btn" id="link1998-btn" style="flex:1; text-align:center;"><span class="alias">Link 1998</span></button>
+    <button class="preset-btn" id="unlink1998-btn" style="flex:1; text-align:center;"><span class="alias">Unlink 1998</span></button>
+  </div>
+  <div style="font-size:0.85em; color:#94a3b8; margin-top:10px;" id="links-msg"></div>
+  <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+    Linking one node unlinks the other first — 1998 and 1999 are never
+    linked to 625730 at the same time.
+  </div>
+</div>
+
 <div class="card" id="dmr-card">
   <h2>DMR Quick Tune</h2>
   <div class="dmr-networks">
@@ -194,9 +213,9 @@
     </select>
   </div>
   <div style="display:flex; gap:8px;">
-    <input type="text" id="m17-reflector-input" placeholder="Or type reflector (e.g. M17-M17)" autocomplete="off"
-      style="flex:1; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
-    <select id="m17-module-select" style="flex:0 0 86px; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+    <input type="text" id="m17-reflector-input" placeholder="Type reflector (e.g. M17-M17)" autocomplete="off"
+      style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+    <select id="m17-module-select" style="flex:0 0 74px; min-width:0; padding:12px 4px; text-align:center; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
   </div>
   <div style="display:flex; gap:8px; margin-top:10px;">
     <button class="preset-btn" id="m17-switch-btn" style="flex:1; text-align:center;"><span class="alias">Switch Reflector</span></button>
@@ -574,12 +593,18 @@ function refreshM17() {
     }
     // Helper-backed status is flat; the degraded (no-helper) form nests
     // the state under .m17 and reports linked as a sibling field.
-    const m = r.m17 ? { ...r.m17, linked: r.linked } : r;
+    const m = r.m17 ? { ...r.m17, linked: r.linked, linked1999: r.linked1999 } : r;
+    renderLinkStates(m);
     svcEl.textContent = m.service === "active" ? "Running" : "Stopped";
     svcEl.className = m.service === "active" ? "status-ok" : "status-bad";
+    // ack = the reflector's last word in the bridge log. Service-active
+    // alone does not mean connected (a NACKed bridge keeps running).
+    const ackNote = m.ack === "acked" ? " · connected"
+      : (m.ack === "nacked" ? " · REFUSED (NACK)" : "");
     curEl.textContent = m.reflector
-      ? (m.reflector + (m.module ? " · module " + m.module : ""))
+      ? (m.reflector + (m.module ? " · module " + m.module : "") + ackNote)
       : "—";
+    curEl.className = m.ack === "nacked" ? "status-bad" : "";
     linkEl.textContent = m.linked === "yes" ? "Linked to 625730"
       : (m.linked === "no" ? "Not linked" : "Unknown");
     linkEl.className = m.linked === "yes" ? "status-ok" : "status-warn";
@@ -592,7 +617,10 @@ function refreshM17() {
 function m17Action(op, params = {}) {
   const msg = document.getElementById("m17-msg");
   msg.textContent = "Working...";
-  const timeout = (op === "switch" || op === "connect") ? 45000 : 25000;
+  // Switch/connect can take ~2 minutes worst case: if the reflector NACKs
+  // the new connection (it still holds the previous session -- USRP2M17
+  // never sends a disconnect), the helper waits and retries.
+  const timeout = (op === "switch" || op === "connect") ? 150000 : 25000;
   api("m17", { op, ...params }, timeout).then(r => {
     msg.textContent = r.ok
       ? (r.note || "Done")
@@ -601,6 +629,48 @@ function m17Action(op, params = {}) {
     setTimeout(refreshStatus, 1000);
   }).catch(e => { msg.textContent = "Error: " + e.message; });
 }
+
+// ---------- Node Links card (1999 DVSwitch + 1998 M17) ----------
+// Both link pairs run through the same helper status/action endpoint as
+// the M17 panel; linking one node unlinks the other first (helper-side).
+function renderLinkStates(m) {
+  const s1999 = document.getElementById("link1999-state");
+  const s1998 = document.getElementById("link1998-state");
+  if (!s1999 || !s1998) return;
+  const render = (el, v) => {
+    el.textContent = v === "yes" ? "Linked to 625730"
+      : (v === "no" ? "Not linked" : "Unknown");
+    el.className = v === "yes" ? "status-ok" : "status-warn";
+  };
+  render(s1999, m.linked1999);
+  render(s1998, m.linked);
+}
+
+function refreshLinks() {
+  api("m17", { op: "status" }, 15000).then(r => {
+    if (!r.ok) return;
+    const m = r.m17 ? { ...r.m17, linked: r.linked, linked1999: r.linked1999 } : r;
+    renderLinkStates(m);
+  }).catch(() => {});
+}
+
+function linkAction(op) {
+  const msg = document.getElementById("links-msg");
+  msg.textContent = "Working...";
+  api("m17", { op }, 30000).then(r => {
+    msg.textContent = r.ok
+      ? (r.note || "Done")
+      : ("Failed: " + (r.note || r.error || "unknown"));
+    renderLinkStates(r);
+    if (m17Open) refreshM17();
+    setTimeout(refreshStatus, 1000);
+  }).catch(e => { msg.textContent = "Error: " + e.message; });
+}
+
+document.getElementById("link1999-btn").onclick = () => linkAction("link1999");
+document.getElementById("unlink1999-btn").onclick = () => linkAction("unlink1999");
+document.getElementById("link1998-btn").onclick = () => linkAction("link");
+document.getElementById("unlink1998-btn").onclick = () => linkAction("unlink");
 
 document.getElementById("m17-switch-btn").onclick = () => {
   const name = document.getElementById("m17-reflector-input").value.trim()
@@ -762,13 +832,20 @@ function refreshStatus() {
     // ini points at the shown reflector.
     const m17el = document.getElementById("net-m17");
     if (m17el && r.m17) {
-      if (r.m17.service === "active") {
-        m17el.textContent = "Connected · " + (r.m17.reflector || "?")
-          + (r.m17.module ? " " + r.m17.module : "");
-        m17el.className = "status-ok";
-      } else {
+      const target = (r.m17.reflector || "?") + (r.m17.module ? " " + r.m17.module : "");
+      if (r.m17.service !== "active") {
         m17el.textContent = "Bridge down";
         m17el.className = "status-bad";
+      } else if (r.m17.ack === "nacked") {
+        // Running but the reflector refused us (stale-session NACK).
+        m17el.textContent = "Refused (NACK) · " + target;
+        m17el.className = "status-bad";
+      } else if (r.m17.ack === "acked") {
+        m17el.textContent = "Connected · " + target;
+        m17el.className = "status-ok";
+      } else {
+        m17el.textContent = "Running · " + target;
+        m17el.className = "status-warn";
       }
     }
     
@@ -797,8 +874,10 @@ function refreshStatus() {
     } else {
       live.classList.add("hidden");
     }
-    // Keep the M17 panel's status fresh on the same poll cadence.
-    if (m17Open) refreshM17();
+    // Keep the M17 panel's status fresh on the same poll cadence, and the
+    // Node Links card too (refreshM17 already renders the link states
+    // when the panel is open, so only fetch separately when it is not).
+    if (m17Open) refreshM17(); else refreshLinks();
   }).catch(e => {
     document.getElementById("log-box").textContent = "Status error: " + e.message;
   });
