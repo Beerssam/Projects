@@ -47,6 +47,14 @@ M17_SWITCH="$(dirname "$0" 2>/dev/null)/m17-switch.sh"
 # USRP2M17 config (env override for testing). Read directly by the CGI for
 # status display; only the helper may write it.
 M17_INI="${M17_INI:-/etc/USRP2M17.ini}"
+# USRP2M17 log dir (live-lamp parsing) and the shared DVRef mrefd registry
+# cache (primed by install-m17.sh, refreshed by m17-switch.sh). The M17
+# reflector list is served from that file instead of a second DVRef API
+# pull -- DVRef rate-limits to ~1 request/IP/6h per resource, and the
+# helper's fetch and the CGI's fetch used to throttle each other, which
+# left the panel showing only the 1-entry hardcoded fallback (Oct 23 2026).
+M17_LOG_DIR="${M17_LOG_DIR:-/var/log/usrp2m17}"
+M17_REFLECTORS_JSON="${M17_REFLECTORS_JSON:-/var/lib/usrp2m17/reflectors.json}"
 # MMDVM_Bridge log directory (env override for testing). The bridge logs
 # real in/out transmissions to files here; unlike the systemd journal,
 # these are readable by www-data.
@@ -296,10 +304,17 @@ live_state() {
   # a direction is "on" when its latest begin line has no matching end
   # line after it and began within the last 300s (staleness guard against
   # a missed end line sticking a lamp on). Prints a JSON object.
+  # M17 traffic never touches MMDVM_Bridge, so the newest USRP2M17 log is
+  # parsed too: its USRP side (Sam keying up) has real begin/end lines,
+  # but its M17 side logs only END lines (with durations) -- network audio
+  # therefore lights TX as a short flash right after a transmission ends
+  # instead of for its whole length. Better than never lighting at all.
   local -a files
   mapfile -t files < <(bridge_log_files)
-  if [[ ${#files[@]} -eq 0 ]]; then printf '{"tx_on":false,"tx_label":"","rx_on":false,"rx_label":""}'; return; fi
-  python3 - "${files[0]}" <<'PYEOF'
+  local bridge="${files[0]:-}" m17log
+  m17log=$(ls -t "$M17_LOG_DIR"/USRP2M17-*.log 2>/dev/null | head -1)
+  if [[ -z "$bridge" && -z "$m17log" ]]; then printf '{"tx_on":false,"tx_label":"","rx_on":false,"rx_label":""}'; return; fi
+  python3 - "$bridge" "$m17log" <<'PYEOF'
 import json, re, sys, time
 from datetime import datetime, timezone
 
@@ -341,9 +356,45 @@ try:
 except OSError:
     pass
 
+# --- USRP2M17 log (M17 via node 1998) ---
+# USRP side = audio from Asterisk (Sam keyed up): real begin/end lines.
+# M17 side = audio from the reflector: only an END line, carrying the
+# duration, so TX can only flash briefly after a transmission finishes.
+M17_LINE = re.compile(r"^.: (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+ (.*)$")
+M17_END = re.compile(r"M17 received end of voice transmission, ([\d.]+) seconds")
+m17rx = {"begin": 0, "end": 0}
+m17tx_end = 0
+m17tx_dur = 0.0
+if len(sys.argv) > 2 and sys.argv[2]:
+    try:
+        with open(sys.argv[2], errors="replace") as fh:
+            lines = fh.readlines()[-400:]
+        for line in lines:
+            m = M17_LINE.match(line)
+            if not m:
+                continue
+            ts, msg = m.groups()
+            if "USRP voice received as first frame" in msg \
+               or "USRP text info received first frame" in msg:
+                m17rx["begin"] = epoch(ts)
+                continue
+            if "USRP received end of voice transmission" in msg:
+                if m17rx["begin"]:
+                    m17rx["end"] = m17rx["begin"] + 0.5
+                continue
+            e = M17_END.search(msg)
+            if e:
+                m17tx_end = epoch(ts)
+                m17tx_dur = float(e.group(1))
+    except OSError:
+        pass
+
 now = time.time()
 def on(st):
     return st["begin"] > st["end"] and (now - st["begin"]) <= 300
+
+m17_rx_on = m17rx["begin"] > m17rx["end"] and (now - m17rx["begin"]) <= 300
+m17_tx_on = m17tx_end > 0 and (now - m17tx_end) <= 6
 
 print(json.dumps({
     # Sam's convention (Oct 22 2026): the lamps speak from the NODE's RF
@@ -352,8 +403,12 @@ print(json.dumps({
     # (his audio entering the network). When network audio plays out to
     # him, the node is TRANSMITTING -- the bridge's "received network"
     # stream. The fields are deliberately crossed here; do not "fix" back.
-    "rx_on": on(tx), "rx_label": tx["label"] if on(tx) else "",
-    "tx_on": on(rx), "tx_label": rx["label"] if on(rx) else "",
+    # M17 merges in with the same perspective: his key-up is the USRP
+    # stream into USRP2M17 (RX), reflector audio is the M17 stream (TX).
+    "rx_on": on(tx) or m17_rx_on,
+    "rx_label": tx["label"] if on(tx) else ("M17 · via node 1998" if m17_rx_on else ""),
+    "tx_on": on(rx) or m17_tx_on,
+    "tx_label": rx["label"] if on(rx) else (("M17 · %.0fs" % m17tx_dur) if m17_tx_on else ""),
 }))
 PYEOF
 }
@@ -384,6 +439,21 @@ network_states() {
     "$(svc_state nxdngateway)" "$(svc_state ircddbgatewayd)"
 }
 
+m17_ack_state() {
+  # acked|nacked|unknown -- the reflector's LAST word in the newest
+  # USRP2M17 log. Service-active does NOT mean reflector-connected (a
+  # NACKed bridge keeps running; USRP2M17 never sends DISC, so a restart
+  # gets NACKed as a duplicate until the old session times out).
+  local f
+  f=$(ls -t "$M17_LOG_DIR"/USRP2M17-*.log 2>/dev/null | head -1)
+  [[ -n "$f" && -r "$f" ]] || { printf 'unknown'; return; }
+  case "$(tail -c 262144 "$f" 2>/dev/null | grep -aE 'Received (ACKN|NACK)' | tail -1)" in
+    *ACKN*) printf 'acked' ;;
+    *NACK*) printf 'nacked' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 m17_block() {
   # JSON object contents for the status "m17" field: USRP2M17 service state
   # plus the reflector/module from the ini's [M17 Network] Name line. Cheap
@@ -394,8 +464,9 @@ m17_block() {
          | cut -d= -f2 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   ref="${name%% *}"; mod=""
   [[ "$name" == *" "* ]] && mod="${name##* }"
-  printf '"service":"%s","reflector":"%s","module":"%s"' \
-    "$(svc_state usrp2m17)" "$(json_escape "$ref")" "$(json_escape "$mod")"
+  printf '"service":"%s","reflector":"%s","module":"%s","ack":"%s"' \
+    "$(svc_state usrp2m17)" "$(json_escape "$ref")" "$(json_escape "$mod")" \
+    "$(m17_ack_state)"
 }
 
 # --- actions ---
@@ -430,22 +501,22 @@ do_status() {
 }
 
 do_m17() {
-  # ?action=m17&op=status|switch|connect|disconnect|link|unlink
+  # ?action=m17&op=status|switch|connect|disconnect|link|unlink|link1999|unlink1999
   #   switch also takes &name=<reflector>&module=<A-Z>.
   # All work goes through the privileged m17-switch helper, which prints
   # key=value lines; the CGI validates inputs, runs it, and renders the
   # result as JSON -- including honest ok:false on any helper failure.
   local op name module out rc k v
-  local service="" reflector="" mod="" address="" port="" linked="" note=""
+  local service="" reflector="" mod="" address="" port="" linked="" linked1999="" ack="" note=""
   op=$(get_param op)
   case "$op" in
-    status|switch|connect|disconnect|link|unlink) ;;
+    status|switch|connect|disconnect|link|unlink|link1999|unlink1999) ;;
     *) printf '{"ok":false,"error":"Invalid m17 op"}'; return ;;
   esac
   if [[ ! -x "$M17_SWITCH" ]]; then
     if [[ "$op" == "status" ]]; then
       # Degraded status without the helper: ini + service state only.
-      printf '{"ok":true,"op":"status","m17":{%s},"linked":"unknown","note":"m17 helper not installed - re-run install.sh"}' \
+      printf '{"ok":true,"op":"status","m17":{%s},"linked":"unknown","linked1999":"unknown","note":"m17 helper not installed - re-run install.sh"}' \
         "$(m17_block)"
       return
     fi
@@ -475,14 +546,17 @@ do_m17() {
       address)   address="$v" ;;
       port)      port="$v" ;;
       linked)    linked="$v" ;;
+      linked1999) linked1999="$v" ;;
+      ack)       ack="$v" ;;
       note)      note="$v" ;;
     esac
   done <<< "$out"
-  printf '{"ok":%s,"op":"%s","service":"%s","reflector":"%s","module":"%s","address":"%s","port":"%s","linked":"%s","note":"%s"}' \
+  printf '{"ok":%s,"op":"%s","service":"%s","reflector":"%s","module":"%s","address":"%s","port":"%s","linked":"%s","linked1999":"%s","ack":"%s","note":"%s"}' \
     "$([[ $rc -eq 0 ]] && echo true || echo false)" "$op" \
     "$(json_escape "$service")" "$(json_escape "$reflector")" \
     "$(json_escape "$mod")" "$(json_escape "$address")" \
     "$(json_escape "$port")" "$(json_escape "$linked")" \
+    "$(json_escape "$linked1999")" "$(json_escape "$ack")" \
     "$(json_escape "$note")"
 }
 
@@ -932,6 +1006,41 @@ except Exception:
   fi
 }
 
+do_reflectors_m17_registry() {
+  # Emit the M17 reflector list from the shared raw DVRef registry cache
+  # (M17_REFLECTORS_JSON: primed by install-m17.sh, refreshed by
+  # m17-switch.sh when it resolves reflectors). Returns non-zero when the
+  # file is missing/unreadable/empty so the caller falls back to the DVRef
+  # web fetch. Same id convention as do_reflectors_web ("M17-<designator>").
+  [[ -r "$M17_REFLECTORS_JSON" ]] || return 1
+  local out
+  out=$(python3 - "$M17_REFLECTORS_JSON" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    refs = json.load(open(sys.argv[1]))["data"]["reflectors"]
+    out = []
+    for r in refs[:300]:
+        rid = str(r.get("designator", ""))
+        if not rid:
+            continue
+        name = r.get("name") or r.get("slug") or rid
+        if not rid.upper().startswith("M17"):
+            rid = "M17-" + rid
+        out.append({"id": rid, "name": name})
+    if not out:
+        sys.exit(1)
+    print(json.dumps(out))
+except SystemExit:
+    raise
+except Exception:
+    sys.exit(1)
+PYEOF
+) || return 1
+  [[ -n "$out" && "$out" != "[]" ]] || return 1
+  printf '{"ok":true,"reflectors":%s,"source":"dvref-registry"}' "$out"
+  return 0
+}
+
 do_reflectors() {
   # ?mode=ysf|p25|nxdn|dstar|m17 -> JSON list from the node's host files,
   # falling back to the DVRef API (cached 24h in /tmp) if not found locally.
@@ -951,6 +1060,12 @@ do_reflectors() {
       ;;
     *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
   esac
+  # M17 has no host file; serve it from the shared DVRef registry cache
+  # instead of a second API pull (DVRef throttles repeat pulls per IP,
+  # which is what left the panel with only its 1-entry fallback list).
+  if [[ "$mode" == "m17" ]] && do_reflectors_m17_registry; then
+    return
+  fi
   # For YSF, merge FCS rooms into the list if found
   if [[ "$mode" == "ysf" && -n "$fcs" && "$fcs" != "$f" ]]; then
     # We'll append FCS entries after the YSF ones in the output loop
