@@ -27,10 +27,22 @@
 
 set -u
 
+# Journal acquisition. The old approach (last 6000 lines) broke down in
+# normal use: DMRGateway logs every transmission on three networks, so
+# the boot-time login verdicts scroll out of a 6000-line window within a
+# day or so and every network degrades to "unknown" (seen Oct 23 2026,
+# ~18h after boot, with all three networks actually connected). Verdict
+# lines are rare, so pre-filter for them with journalctl --grep and let
+# the search span the whole retained journal; fall back to the line
+# window if the grep comes back empty (old systemd, odd journal).
+VERDICT_RE='[Ll]ogged into|[Ll]ogin|[Ff]ailed|timed out|[Tt]imeout|[Rr]efused|[Uu]nreachable|[Dd]isconnect|[Ll]ost|[Cc]losed'
 if [[ -n "${NET_STATUS_SRC:-}" ]]; then
   JOURNAL=$(cat "$NET_STATUS_SRC" 2>/dev/null)
 else
-  JOURNAL=$(journalctl -u dmrgateway --no-pager -n 6000 -o cat 2>/dev/null)
+  JOURNAL=$(journalctl -u dmrgateway --no-pager -o cat --grep "$VERDICT_RE" 2>/dev/null)
+  if [[ -z "$JOURNAL" ]]; then
+    JOURNAL=$(journalctl -u dmrgateway --no-pager -n 6000 -o cat 2>/dev/null)
+  fi
 fi
 
 verdict() {
