@@ -129,6 +129,12 @@ restore_tree "$SET/www-allscan" "$ROOT/var/www/html/allscan"
 restore_tree "$SET/www-AUTOSKY" "$ROOT/var/www/html/AUTOSKY"
 restore_file "$SET/dvswitch-control.html" "$ROOT/var/www/html/dvswitch-control.html"
 restore_file "$SET/dvswitch-control.sh" "$ROOT/var/www/cgi-bin/dvswitch-control.sh"
+# M17 bridge + CGI helpers (captured by backup-node-configs.sh v2.1;
+# absent from pre-M17 sets, in which case restore_file is a no-op).
+restore_file "$SET/USRP2M17.ini" "$ROOT/etc/USRP2M17.ini"
+for helper in mode-switch.sh gain-set.sh net-status.sh m17-switch.sh; do
+  restore_file "$SET/$helper" "$ROOT/var/www/cgi-bin/$helper"
+done
 restore_file "$SET/var-lib-mmdvm/YSFHosts.txt" "$ROOT/var/lib/mmdvm/YSFHosts.txt"
 restore_tree "$SET/systemd" "$ROOT/etc/systemd/system"
 if [[ -d "$SET/skywarnplus" ]]; then
