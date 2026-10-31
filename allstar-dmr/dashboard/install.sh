@@ -97,6 +97,34 @@ for stale in dvswitch-control.sh mode-switch.sh gain-set.sh net-status.sh m17-sw
 done
 echo "== Installed HTML, CGI and helpers (mode-switch, gain-set, net-status, m17-switch)"
 
+# Seed the M17 reflector registry if the node's copy is missing or is not
+# valid DVRef JSON. (Oct 31 2026: the install-time prime once saved a
+# Cloudflare challenge page as /var/lib/usrp2m17/reflectors.json because the
+# node's direct DVRef fetches are bot-challenged; the panel's M17 list and
+# the helper's reflector resolution both read that file.) A valid existing
+# copy -- possibly fresher than the snapshot, refreshed by m17-switch.sh --
+# is never overwritten.
+M17_REGISTRY_SRC="$SCRIPT_DIR/../m17/reflectors.json"
+M17_REGISTRY_DEST="${M17_REGISTRY_DEST:-/var/lib/usrp2m17/reflectors.json}"
+registry_valid() {
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["data"]["reflectors"]' "$1" 2>/dev/null
+}
+if [[ -f "$M17_REGISTRY_SRC" ]]; then
+  if registry_valid "$M17_REGISTRY_DEST"; then
+    echo "== M17 reflector registry present and valid; left as-is"
+  elif registry_valid "$M17_REGISTRY_SRC"; then
+    if [[ -f "$M17_REGISTRY_DEST" ]]; then
+      cp "$M17_REGISTRY_DEST" "$M17_REGISTRY_DEST.bak.$TS"
+      echo "== Backed up invalid M17 reflector registry"
+    fi
+    mkdir -p "$(dirname "$M17_REGISTRY_DEST")"
+    install -m 644 "$M17_REGISTRY_SRC" "$M17_REGISTRY_DEST"
+    echo "== Seeded M17 reflector registry from bundled snapshot"
+  else
+    echo "== WARNING: bundled M17 registry snapshot is invalid; registry not seeded"
+  fi
+fi
+
 # Apache CGI config (if not already present)
 if ! grep -q "dvswitch-control" /etc/apache2/conf-enabled/*.conf 2>/dev/null; then
   cat > /etc/apache2/conf-available/dvswitch-control.conf <<'EOF'
