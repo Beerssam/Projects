@@ -5,6 +5,10 @@
 # gateway config, Allmon3, Supermon, AllScan, AutoSky, SkywarnPlus configs,
 # and system manifests (packages, enabled services, crontabs, Tailscale
 # status). Restore with restore-node.sh; full procedure in RESTORE.md.
+# v2.1 (Oct 24 2026, local, unpushed): also capture the M17 bridge state
+# the Oct 23 installs added -- /etc/USRP2M17.ini (the panel's reflector
+# choice lives only there), the usrp2m17 systemd unit, and the four CGI
+# helpers. Without these, a post-M17 backup still loses the M17 setup.
 #
 # Redaction: secret VALUES are replaced with __REDACTED__ (the key stays
 # visible so a restore knows what to fill in). Nothing with a live password,
@@ -165,6 +169,21 @@ if [[ -f "$ROOT/var/www/cgi-bin/dvswitch-control.sh" ]]; then
   cp "$ROOT/var/www/cgi-bin/dvswitch-control.sh" "$AST_BACKUP_DIR/" 2>/dev/null || true
   echo "  dvswitch-control.sh (CGI)"
 fi
+# CGI helpers (the dashboard's working parts -- previously uncaptured)
+for helper in mode-switch.sh gain-set.sh net-status.sh m17-switch.sh; do
+  if [[ -f "$ROOT/var/www/cgi-bin/$helper" ]]; then
+    cp "$ROOT/var/www/cgi-bin/$helper" "$AST_BACKUP_DIR/" 2>/dev/null || true
+    echo "  $helper (CGI helper)"
+  fi
+done
+
+# M17 bridge state (Oct 23 installs): the ini holds the panel's current
+# reflector/module choice, which exists nowhere else; redact_copy keeps
+# the callsign/ports and would only blank a secret key if one appeared.
+if [[ -f "$ROOT/etc/USRP2M17.ini" ]]; then
+  redact_copy "$ROOT/etc/USRP2M17.ini" "$AST_BACKUP_DIR/USRP2M17.ini"
+  echo "  /etc/USRP2M17.ini (M17 bridge -- panel reflector state)"
+fi
 
 # YSF hosts file (carries the local-parrot fix state)
 if [[ -f "$ROOT/var/lib/mmdvm/YSFHosts.txt" ]]; then
@@ -178,6 +197,12 @@ if [[ -d "$ROOT/etc/systemd/system" ]]; then
   mkdir -p "$AST_BACKUP_DIR/systemd"
   cp -r "$ROOT"/etc/systemd/system/*.d "$AST_BACKUP_DIR/systemd/" 2>/dev/null || true
   echo "  systemd overrides"
+  # M17 bridge unit itself (not an override -- the *.d glob above misses it).
+  # Placed in systemd/ so restore-node.sh's restore_tree picks it up.
+  if [[ -f "$ROOT/etc/systemd/system/usrp2m17.service" ]]; then
+    cp "$ROOT/etc/systemd/system/usrp2m17.service" "$AST_BACKUP_DIR/systemd/usrp2m17.service"
+    echo "  usrp2m17.service (M17 bridge unit)"
+  fi
 fi
 
 # --- System manifests (the rebuild shopping list) ---
