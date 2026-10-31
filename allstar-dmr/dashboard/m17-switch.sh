@@ -150,6 +150,14 @@ refresh_reflectors() {
   if [[ -f "$REFLECTORS_JSON" ]]; then
     age=$(( $(date +%s) - $(stat -c %Y "$REFLECTORS_JSON" 2>/dev/null || echo 0) ))
   fi
+  # A cache that is not valid DVRef JSON (e.g. a Cloudflare challenge page
+  # saved by an unvalidated fetch) counts as stale no matter its age, so a
+  # refresh is attempted; the validated write below still refuses to
+  # replace it with anything that does not parse.
+  if [[ -f "$REFLECTORS_JSON" ]] \
+     && ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["data"]["reflectors"]' "$REFLECTORS_JSON" 2>/dev/null; then
+    age=999999
+  fi
   if [[ $age -lt 86400 ]]; then return 0; fi
   tmp=$(mktemp) || return 1
   if "$CURL" -s --max-time 20 \
