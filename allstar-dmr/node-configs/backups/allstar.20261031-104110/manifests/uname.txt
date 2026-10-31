@@ -1,0 +1,1 @@
+Linux Allstar 6.12.96+rpt-rpi-v8 #1 SMP PREEMPT Debian 1:6.12.96-1+rpt1 (2026-07-24) aarch64 GNU/Linux

@@ -1,0 +1,92 @@
+/**
+ **
+ ** Customize the colors of Allmon3
+ **
+ ** All colors use the rgba() function
+ ** Read more at https://www.w3schools.com/cssref/func_rgba.php
+ ** on how to use rgba.
+ **
+ **/
+
+:root{
+
+	/* Background of the top navbar */
+	--am3-navbar-background: rgba(0, 0, 0, 1);
+
+	/* Text/Foreground color of the top navbar */
+	--am3-navbar-color: rgba(255, 255, 255, 1);
+
+	/* Background of the node titlebar */
+	--am3-nodetitle-background: rgba(24, 92, 145, 1);
+
+	/* Text/Forground color of the node titlebar */
+	--am3-nodetitle-color: rgba(255, 255, 255, 1);
+
+	/* Button highlight color of buttons in the node titlebar */
+	--am3-nodetitle-button-hl: rgba(145, 24, 92, 1);
+
+	/* Node connection table header text color */
+	--am3-conntable-header-text: rgba(255, 255, 255, 1);
+
+	/* Node connection table header background color */
+	--am3-conntable-header-bg: rgba(33, 37, 41, 1);
+
+	/* Node connection table border color */
+	--am3-conntable-border-color: rgba(55, 59, 62, 1);
+
+	/* Node connection table keyed color */
+	--am3-conntable-conn-keyed-color: rgba(0, 0, 0, 1);
+	--am3-conntable-conn-keyed-bg-color: rgba(209, 231, 221, 1);
+
+	/* Node connection table stats=Connecting colors */
+	--am3-conntable-conn-noconn-color: rgba(0,0,0,1);
+	--am3-conntable-conn-noconn-bg-color: rgba(255,255,255,1);
+
+   /* Node Tx Local */
+    --am3-node-tx-local-color: rgb(0, 0, 0);
+    --am3-node-tx-local-bg-color: rgb(245, 198, 203);
+
+    /* NOde Tx Network */
+    --am3-node-tx-network-color: rgb(0, 0, 0);
+    --am3-node-tx-network-bg-color: rgb(245, 198, 203);
+
+    /* Node Tx Telem */
+    --am3-node-tx-telemetry-color: rgb(0, 0, 0);
+    --am3-node-tx-telemetry-bg-color: rgb(245, 198, 203);
+
+    /* Node Tx Remote */
+    --am3-node-tx-playback-remote-color: rgb(0, 0, 0);
+    --am3-node-tx-playback-remote-bg-color: rgb(245, 198, 203);
+
+    /* Node No Tx */
+    --am3-node-no-tx-color: rgb(0, 0, 0);
+    --am3-node-no-tx-bg-color: rgb(195, 230, 203);
+
+}
+
+/* To customize the color of the side navbar buttons,
+ * uncomment the next section below and change as desired.
+ * Note changing all of the button attribtues is complex so
+ * patience will be needed
+*/
+/** REMOVE THIS AND THE CLOSING COMMENT
+.btn-secondary {
+    --bs-btn-color: #fff;
+    --bs-btn-bg: #6c757d;
+    --bs-btn-border-color: #6c757d;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-hover-bg: #5c636a;
+    --bs-btn-hover-border-color: #565e64;
+    --bs-btn-focus-shadow-rgb: 130,138,145;
+    --bs-btn-active-color: #fff;
+    --bs-btn-active-bg: #565e64;
+    --bs-btn-active-border-color: #51585e;
+    --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.125);
+    --bs-btn-disabled-color: #fff;
+    --bs-btn-disabled-bg: #6c757d;
+    --bs-btn-disabled-border-color: #6c757d;
+}
+*/
+
+
+

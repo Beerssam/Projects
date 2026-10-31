@@ -1,0 +1,8 @@
+MAILTO=""
+# Supermon 7.4 updater crontab entry
+0 3 * * * /var/www/html/supermon/astdb.php cron
+# Hourly Time and Weather Announcement
+00 00-23 * * * (/usr/bin/nice -19 /usr/bin/perl /usr/local/sbin/saytime.pl 66226 62573 >/dev/null)
+# Reboot
+00 04 * * * /usr/sbin/shutdown -r
+
