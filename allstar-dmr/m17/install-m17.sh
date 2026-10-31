@@ -37,6 +37,7 @@ DRY=0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INI_SRC="$SCRIPT_DIR/USRP2M17.ini"
 UNIT_SRC="$SCRIPT_DIR/usrp2m17.service"
+REGISTRY_SRC="$SCRIPT_DIR/reflectors.json"
 RPT_CONF="${RPT_CONF:-$ROOT/etc/asterisk/rpt.conf}"
 INI_DEST="$ROOT/etc/USRP2M17.ini"
 UNIT_DEST="$ROOT/etc/systemd/system/usrp2m17.service"
@@ -162,12 +163,28 @@ cp "$UNIT_SRC" "$UNIT_DEST" || die "unit install failed; $ROLLBACK"
 
 if [[ -z "$ROOT" ]]; then
   say "priming DVRef reflector cache (best effort)"
-  curl -s --max-time 20 \
-    -H "X-DVRef-Callsign: KF0RIZ" \
-    -H "X-DVRef-Contact: https://github.com/Beerssam/Projects" \
-    "https://dvref.com/api/v2/mrefd/reflectors/" \
-    -o "$LIB_DIR/reflectors.json" 2>/dev/null \
-    || echo "   (cache prime failed; the dashboard helper will fetch on first use)"
+  # Fetch to a temp file and VALIDATE before installing: on Oct 23 2026 an
+  # unvalidated prime saved Cloudflare's "Just a moment..." HTML challenge
+  # page as reflectors.json (the node's fetches are bot-challenged), which
+  # silently emptied the dashboard's M17 reflector list for a week. If the
+  # live fetch does not validate, fall back to the bundled snapshot.
+  prime_tmp="$(mktemp)"
+  if curl -s --max-time 20 \
+       -H "X-DVRef-Callsign: KF0RIZ" \
+       -H "X-DVRef-Contact: https://github.com/Beerssam/Projects" \
+       "https://dvref.com/api/v2/mrefd/reflectors/" \
+       -o "$prime_tmp" 2>/dev/null \
+     && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["data"]["reflectors"]' "$prime_tmp" 2>/dev/null; then
+    cp "$prime_tmp" "$LIB_DIR/reflectors.json"
+    echo "   (live DVRef registry cached)"
+  elif [[ -f "$REGISTRY_SRC" ]] \
+     && python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["data"]["reflectors"]' "$REGISTRY_SRC" 2>/dev/null; then
+    cp "$REGISTRY_SRC" "$LIB_DIR/reflectors.json"
+    echo "   (live fetch unusable; installed the bundled registry snapshot)"
+  else
+    echo "   (cache prime failed; the dashboard helper will fetch on first use)"
+  fi
+  rm -f "$prime_tmp"
 fi
 
 say "daemon-reload + enable usrp2m17"
