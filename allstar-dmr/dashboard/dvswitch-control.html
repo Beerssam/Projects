@@ -169,6 +169,10 @@
     <button class="net-btn" data-net="tgif">TGIF</button>
     <button class="net-btn" data-net="ksdmr">KS-DMR</button>
   </div>
+  <div style="margin-bottom:10px;">
+    <input type="search" id="dmr-preset-search" placeholder="Search DMR presets by name or TG..." autocomplete="off"
+      style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+  </div>
   <div class="preset-grid" id="preset-grid">
     <!-- Populated by JS -->
   </div>
@@ -191,6 +195,10 @@
 <div class="card hidden" id="mode-tune-card">
   <h2 id="mode-tune-title">Tune</h2>
   <div style="margin-bottom:8px;">
+    <input type="search" id="mode-reflector-search" placeholder="Search list by name or number..." autocomplete="off"
+      style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+  </div>
+  <div style="margin-bottom:8px;">
     <select id="mode-reflector-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
       <option value="">-- Choose from list --</option>
     </select>
@@ -208,6 +216,10 @@
   <div class="status-row"><span class="label">Reflector</span><span id="m17-cur">...</span></div>
   <div class="status-row"><span class="label">Node 1998</span><span id="m17-linked">...</span></div>
   <div style="margin:12px 0 8px;">
+    <input type="search" id="m17-reflector-search" placeholder="Search M17 reflectors by name or designator..." autocomplete="off"
+      style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+  </div>
+  <div style="margin:0 0 8px;">
     <select id="m17-reflector-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
       <option value="">-- Choose reflector --</option>
     </select>
@@ -302,6 +314,7 @@ const PRESETS = [
 // Hardcoded fallback if the host files aren't found on the node.
 const REFLECTORS_FALLBACK = {
   "YSF": [
+    { id: "99999", name: "Echo (YSF Parrot)" },
     { id: "12345", name: "US America Link" },
     { id: "67890", name: "US Ka9q" },
   ],
@@ -322,18 +335,66 @@ const REFLECTORS_FALLBACK = {
   ],
 };
 const reflectorCache = {};
+let modeReflectorList = [];
+let m17ReflectorList = [];
+
+function withDashboardReflectorExtras(mode, list) {
+  const out = (list || []).slice();
+  if (mode === "YSF") {
+    // The YSF Echo/parrot is a gateway service (99999), not an ordinary
+    // reflector. Keep it pinned at the top even if a host-file/DVRef list
+    // omits it or truncates the list before the 99999 entry.
+    const existing = out.findIndex(r => String(r.id) === "99999");
+    if (existing >= 0) out.splice(existing, 1);
+    out.unshift({ id: "99999", name: "Echo (YSF Parrot)" });
+  }
+  return out;
+}
+
+function renderReflectorOptions(selectEl, list, query) {
+  const q = (query || "").trim().toLowerCase();
+  const filtered = list.filter(r => {
+    if (!q) return true;
+    return (String(r.id) + " " + String(r.name || "")).toLowerCase().includes(q);
+  });
+  selectEl.innerHTML = '<option value="">-- Choose from list --</option>';
+  if (list.length > 0 && filtered.length === 0) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.disabled = true;
+    opt.textContent = "No matching reflectors";
+    selectEl.appendChild(opt);
+    return;
+  }
+  filtered.forEach(r => {
+    const opt = document.createElement("option");
+    opt.value = r.id;
+    opt.textContent = r.id + " - " + r.name;
+    selectEl.appendChild(opt);
+  });
+}
+
+function renderModeReflectors(selectEl) {
+  const searchEl = document.getElementById("mode-reflector-search");
+  renderReflectorOptions(selectEl, modeReflectorList, searchEl ? searchEl.value : "");
+}
+
+function renderM17Reflectors(selectEl) {
+  const searchEl = document.getElementById("m17-reflector-search");
+  renderReflectorOptions(selectEl, m17ReflectorList, searchEl ? searchEl.value : "");
+}
 
 function loadReflectors(mode, selectEl) {
-  // mode: "YSF", "P25", "NXDN", "DSTAR" (uppercase); CGI wants lowercase
+  // mode: "YSF", "P25", "NXDN", "DSTAR", "M17" (uppercase); CGI wants lowercase
   const key = mode.toLowerCase();
   const fill = (list) => {
-    selectEl.innerHTML = '<option value="">-- Choose from list --</option>';
-    list.forEach(r => {
-      const opt = document.createElement("option");
-      opt.value = r.id;
-      opt.textContent = r.id + " - " + r.name;
-      selectEl.appendChild(opt);
-    });
+    if (mode === "M17") {
+      m17ReflectorList = (list || []).slice();
+      renderM17Reflectors(selectEl);
+    } else {
+      modeReflectorList = withDashboardReflectorExtras(mode, list);
+      renderModeReflectors(selectEl);
+    }
   };
   if (reflectorCache[key]) {
     fill(reflectorCache[key]);
@@ -351,6 +412,13 @@ function loadReflectors(mode, selectEl) {
     fill(REFLECTORS_FALLBACK[mode] || []);
   });
 }
+
+document.getElementById("mode-reflector-search").addEventListener("input", () => {
+  renderModeReflectors(document.getElementById("mode-reflector-select"));
+});
+document.getElementById("m17-reflector-search").addEventListener("input", () => {
+  renderM17Reflectors(document.getElementById("m17-reflector-select"));
+});
 
 const CGI = "/cgi-bin/dvswitch-control.sh";
 
@@ -383,9 +451,26 @@ let tuneHoldTg = "";      // the tuned value the hold protects (status form, e.g
 
 function buildPresets() {
   const grid = document.getElementById("preset-grid");
+  const searchEl = document.getElementById("dmr-preset-search");
+  const query = (searchEl ? searchEl.value : "").trim().toLowerCase();
   grid.innerHTML = "";
-  // Filter presets by selected network (Disconnect shows for all)
-  PRESETS.filter(p => p.net === selectedNet || p.tgid === "4000").forEach(p => {
+  // With no search text, filter presets by selected network (Disconnect
+  // shows for all). With search text, search every preset by alias, TGID,
+  // or network so a known TG can be found without switching tabs first.
+  const netWords = { bm: "brandmeister", tgif: "tgif", ksdmr: "ks-dmr kansas" };
+  const matches = PRESETS.filter(p => {
+    const inSelectedNet = p.net === selectedNet || p.tgid === "4000";
+    if (!query) return inSelectedNet;
+    return (p.alias + " " + p.tgid + " " + (netWords[p.net] || p.net)).toLowerCase().includes(query);
+  });
+  if (matches.length === 0) {
+    const empty = document.createElement("div");
+    empty.textContent = "No matching DMR presets";
+    empty.style.color = "#64748b";
+    empty.style.fontSize = "0.9em";
+    grid.appendChild(empty);
+  }
+  matches.forEach(p => {
     const btn = document.createElement("button");
     btn.className = "preset-btn";
     btn.dataset.tgid = p.tgid;
@@ -475,6 +560,7 @@ function setMode(mode) {
     modeTuneTitle.textContent = cfg.title;
     modeTuneInput.placeholder = cfg.placeholder;
     modeTuneInput.value = "";
+    document.getElementById("mode-reflector-search").value = "";
     tuneFromList = false;
     modeTuneHint.textContent = cfg.hint;
     // Populate reflector dropdown from the node's host files (cached)
@@ -570,9 +656,12 @@ function openM17Panel() {
     mod.value = "A";
   }
   const sel = document.getElementById("m17-reflector-select");
+  document.getElementById("m17-reflector-search").value = "";
   if (sel.options.length <= 1) {
     sel.innerHTML = '<option value="">Loading...</option>';
     loadReflectors("M17", sel);
+  } else if (m17ReflectorList.length > 0) {
+    renderM17Reflectors(sel);
   }
   sel.onchange = () => {
     const inp = document.getElementById("m17-reflector-input");
@@ -789,7 +878,10 @@ function refreshStatus() {
         loadReflectors(r.mode, sel);
         sel.onchange = () => {
           const inp = document.getElementById("mode-tune-input");
-          if (sel.value) inp.value = sel.value;
+          if (sel.value) {
+            inp.value = sel.value;
+            tuneFromList = true;
+          }
         };
       }
     }
@@ -926,6 +1018,7 @@ document.querySelectorAll(".net-btn").forEach(b => {
     buildPresets(); // Rebuilds grid and updates button highlights
   };
 });
+document.getElementById("dmr-preset-search").addEventListener("input", buildPresets);
 
 function setLamp(which, on, label) {
   const lamp = document.getElementById("lamp-" + which);
