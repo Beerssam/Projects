@@ -643,7 +643,12 @@ do_tune() {
   # manually typed values pass through unchanged.
   tune_val="$tgid"
   if [[ "$mode" == "YSF" && "$from_list" == "1" ]]; then
-    if [[ "$tgid" =~ ^[Ff][Cc][Ss]([0-9]+)$ ]]; then
+    if [[ "$tgid" == "99999" ]]; then
+      # YSF Echo/parrot: a gateway service reached by tuning 99999 itself.
+      # It is shown in the dropdown for convenience, but it is NOT an
+      # ordinary reflector and must not receive the 8 prefix (899999).
+      tune_val="99999"
+    elif [[ "$tgid" =~ ^[Ff][Cc][Ss]([0-9]+)$ ]]; then
       # FCS00155 -> 900155
       tune_val="9${BASH_REMATCH[1]}"
     elif [[ "$tgid" =~ ^[0-9]{5}$ ]]; then
@@ -994,6 +999,11 @@ try:
     if mode == "m17" and not rid.upper().startswith("M17"):
       rid = "M17-" + rid
     out.append({"id": rid, "name": name})
+  if mode == "ysf":
+    # Pin the gateway Echo/parrot at the top; public lists may omit it or
+    # truncate before 99999.
+    out = [r for r in out if r["id"] != "99999"]
+    out.insert(0, {"id": "99999", "name": "Echo (YSF Parrot)"})
   print(json.dumps(out))
 except Exception:
   print("[]")
@@ -1084,6 +1094,15 @@ do_reflectors() {
     f="/dev/null"
   fi
   printf '{"ok":true,"reflectors":['
+  if [[ "$mode" == "ysf" ]]; then
+    # The Echo/parrot is a gateway service, not a normal reflector-list
+    # entry. Pin it first so the 300-entry cap (or a missing host-file
+    # line) cannot hide it; the YSF loop below skips any real 99999 line
+    # to avoid a duplicate.
+    printf '{"id":"99999","name":"Echo (YSF Parrot)"}'
+    first=0
+    count=$((count+1))
+  fi
   # Per-mode data-line formats (verified against the live Pi-Star/dvref files):
   #   YSFHosts.txt : "designator;name;description;host;port;000;" (semicolons)
   #   P25Hosts.txt / NXDNHosts.txt : "designator<TAB>host<TAB>port" (Pi-Star
@@ -1111,6 +1130,7 @@ do_reflectors() {
         ;;
     esac
     [[ -z "$id" ]] && continue
+    if [[ "$mode" == "ysf" && "$id" == "99999" ]]; then continue; fi
     [[ -z "$name" ]] && name="$id"
     if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
     printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
