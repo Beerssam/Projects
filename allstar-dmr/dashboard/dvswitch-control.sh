@@ -11,6 +11,9 @@
 #              for_mode declares which mode the value belongs to (the dashboard
 #              tune card knows); when it disagrees with the node's live mode
 #              the mode is switched first so the tune lands correctly.
+#   talkgroups -> ?net=bm|tgif : DMR talkgroup list for the dashboard
+#              dropdown; live fetch from the network's own API with a 24h
+#              /tmp cache, bundled snapshot beside this CGI as fallback.
 #   mode    -> ?mode=DMR|YSF|P25|NXDN|DSTAR : mode-switch.sh (fixes Analog_Bridge
 #              [AMBE_AUDIO] TLV ports for the target mode from DVSwitch.ini,
 #              then runs dvswitch.sh mode <mode>)
@@ -55,6 +58,17 @@ M17_INI="${M17_INI:-/etc/USRP2M17.ini}"
 # left the panel showing only the 1-entry hardcoded fallback (Oct 23 2026).
 M17_LOG_DIR="${M17_LOG_DIR:-/var/log/usrp2m17}"
 M17_REFLECTORS_JSON="${M17_REFLECTORS_JSON:-/var/lib/usrp2m17/reflectors.json}"
+# DMR talkgroup lists (BM + TGIF) for the dashboard dropdown: fetched live
+# from each network's own API, cached 24h in /tmp, with the bundled
+# snapshots installed beside this CGI as fallback -- same resilience
+# pattern as the M17 registry (a challenged/failed fetch must never leave
+# the dropdown empty). Env overrides exist for fixture testing.
+TG_UA="KF0RIZ-DVSwitch-Dashboard/1.0 (+https://github.com/Beerssam/Projects)"
+TG_BM_URL="${TG_BM_URL:-https://api.brandmeister.network/v2/talkgroup/}"
+TG_TGIF_URL="${TG_TGIF_URL:-https://api.tgif.network/dmr/talkgroups/csv}"
+TG_CACHE_DIR="${TG_CACHE_DIR:-/tmp}"
+TG_SNAPSHOT_DIR="${TG_SNAPSHOT_DIR:-$(dirname "$0" 2>/dev/null)}"
+[[ -n "$TG_SNAPSHOT_DIR" && -d "$TG_SNAPSHOT_DIR" ]] || TG_SNAPSHOT_DIR="/var/www/cgi-bin"
 # MMDVM_Bridge log directory (env override for testing). The bridge logs
 # real in/out transmissions to files here; unlike the systemd journal,
 # these are readable by www-data.
@@ -1163,6 +1177,88 @@ do_reflectors() {
   printf ']}'
 }
 
+do_talkgroups() {
+  # ?net=bm|tgif -> {"ok":true,"network":..,"talkgroups":[{id,name}...],
+  # "source":"live|cache|snapshot"}. Live fetch from the network's own API
+  # with a 24h /tmp cache; the bundled snapshot beside this CGI is the
+  # fallback. A fetched list is only accepted (and cached) when it parses
+  # and holds >= 100 entries, so a challenge page or a truncated reply can
+  # never poison the dropdown. (The BrandMeister API in particular has
+  # been seen answering non-browser clients with an empty/blocked reply;
+  # the snapshot keeps the feature working regardless.)
+  local net cache snap json url
+  net=$(get_param net)
+  case "$net" in
+    bm|tgif) ;;
+    *) printf '{"ok":false,"error":"Unknown network"}'; return ;;
+  esac
+  [[ -d "$TG_CACHE_DIR" ]] || mkdir -p "$TG_CACHE_DIR" 2>/dev/null
+  cache="$TG_CACHE_DIR/dvswitch-talkgroups-${net}.json"
+  if [[ -f "$cache" ]] && [[ $(($(date +%s) - $(stat -c %Y "$cache" 2>/dev/null || echo 0))) -lt 86400 ]]; then
+    json=$(cat "$cache" 2>/dev/null)
+    if [[ -n "$json" ]]; then
+      printf '{"ok":true,"network":"%s","talkgroups":%s,"source":"cache"}' "$net" "$json"
+      return
+    fi
+  fi
+  case "$net" in
+    bm)   url="$TG_BM_URL" ;;
+    tgif) url="$TG_TGIF_URL" ;;
+  esac
+  json=$(curl -s --max-time 20 -A "$TG_UA" "$url" 2>/dev/null | \
+    python3 -c '
+import csv, io, json, sys
+net = sys.argv[1]
+raw = sys.stdin.read()
+items = []
+try:
+  if net == "bm":
+    d = json.loads(raw)
+    if isinstance(d, dict):
+      pairs = list(d.items())
+    else:
+      pairs = [(str(r.get("id", "")), r.get("name", "")) for r in d]
+    for num, name in pairs:
+      num = str(num).strip()
+      if num.isdigit() and str(name).strip():
+        items.append({"id": num, "name": str(name).strip()})
+  else:
+    for row in csv.reader(io.StringIO(raw)):
+      if len(row) >= 2 and row[0].strip().isdigit() and row[1].strip():
+        items.append({"id": row[0].strip(), "name": row[1].strip()})
+except Exception:
+  items = []
+seen = set(); out = []
+for it in items:
+  if it["id"] not in seen:
+    seen.add(it["id"]); out.append(it)
+out.sort(key=lambda r: int(r["id"]))
+print(json.dumps(out) if len(out) >= 100 else "[]")
+' "$net" 2>/dev/null)
+  if [[ -n "$json" && "$json" != "[]" ]]; then
+    printf '%s' "$json" > "$cache" 2>/dev/null
+    printf '{"ok":true,"network":"%s","talkgroups":%s,"source":"live"}' "$net" "$json"
+    return
+  fi
+  snap="$TG_SNAPSHOT_DIR/talkgroups-${net}.json"
+  if [[ -r "$snap" ]]; then
+    json=$(python3 -c '
+import json, sys
+try:
+  d = json.load(open(sys.argv[1]))
+  out = d.get("talkgroups", [])
+  print(json.dumps(out) if len(out) >= 100 else "[]")
+except Exception:
+  print("[]")
+' "$snap" 2>/dev/null)
+    if [[ -n "$json" && "$json" != "[]" ]]; then
+      printf '{"ok":true,"network":"%s","talkgroups":%s,"source":"snapshot"}' "$net" "$json"
+      return
+    fi
+  fi
+  printf '{"ok":false,"network":"%s","error":"Talkgroup list unavailable"}' "$net"
+}
+
 # --- main ---
 printf 'Content-Type: application/json\r\n'
 printf 'Cache-Control: no-cache\r\n'
@@ -1175,6 +1271,7 @@ case "$action" in
   tune)       do_tune ;;
   mode)       do_mode ;;
   reflectors) do_reflectors ;;
+  talkgroups) do_talkgroups ;;
   gain)       do_gain ;;
   m17)        do_m17 ;;
   *)          printf '{"ok":false,"error":"Unknown action"}' ;;
