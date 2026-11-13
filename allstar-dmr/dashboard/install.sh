@@ -27,6 +27,8 @@ HELPER_SRC="$SCRIPT_DIR/mode-switch.sh"
 GAIN_SRC="$SCRIPT_DIR/gain-set.sh"
 NET_SRC="$SCRIPT_DIR/net-status.sh"
 M17_SRC="$SCRIPT_DIR/m17-switch.sh"
+TG_BM_SRC="$SCRIPT_DIR/talkgroups-bm.json"
+TG_TGIF_SRC="$SCRIPT_DIR/talkgroups-tgif.json"
 
 [[ -f "$HTML_SRC" ]] || { echo "Missing: $HTML_SRC" >&2; exit 1; }
 [[ -f "$CGI_SRC" ]] || { echo "Missing: $CGI_SRC" >&2; exit 1; }
@@ -34,6 +36,8 @@ M17_SRC="$SCRIPT_DIR/m17-switch.sh"
 [[ -f "$GAIN_SRC" ]] || { echo "Missing: $GAIN_SRC" >&2; exit 1; }
 [[ -f "$NET_SRC" ]] || { echo "Missing: $NET_SRC" >&2; exit 1; }
 [[ -f "$M17_SRC" ]] || { echo "Missing: $M17_SRC" >&2; exit 1; }
+[[ -f "$TG_BM_SRC" ]] || { echo "Missing: $TG_BM_SRC" >&2; exit 1; }
+[[ -f "$TG_TGIF_SRC" ]] || { echo "Missing: $TG_TGIF_SRC" >&2; exit 1; }
 
 # Find Apache web root. The CGI dir is ALWAYS /var/www/cgi-bin because that is
 # what the Apache conf below (ScriptAlias /cgi-bin/ /var/www/cgi-bin/) serves.
@@ -78,6 +82,12 @@ if [[ -f "$CGI_DIR/m17-switch.sh" ]]; then
   cp "$CGI_DIR/m17-switch.sh" "$CGI_DIR/m17-switch.sh.bak.$TS"
   echo "== Backed up existing m17-switch helper"
 fi
+for tgf in talkgroups-bm.json talkgroups-tgif.json; do
+  if [[ -f "$CGI_DIR/$tgf" ]]; then
+    cp "$CGI_DIR/$tgf" "$CGI_DIR/$tgf.bak.$TS"
+    echo "== Backed up existing $tgf"
+  fi
+done
 
 # Install
 cp "$HTML_SRC" "$WEB_ROOT/dvswitch-control.html"
@@ -96,6 +106,14 @@ for stale in dvswitch-control.sh mode-switch.sh gain-set.sh net-status.sh m17-sw
   fi
 done
 echo "== Installed HTML, CGI and helpers (mode-switch, gain-set, net-status, m17-switch)"
+
+# DMR talkgroup snapshots (BM + TGIF): the CGI serves the dropdown lists
+# from a live API fetch when it can and falls back to these bundled files,
+# installed beside the CGI where it looks for them.
+cp "$TG_BM_SRC" "$CGI_DIR/talkgroups-bm.json"
+cp "$TG_TGIF_SRC" "$CGI_DIR/talkgroups-tgif.json"
+chmod 644 "$CGI_DIR/talkgroups-bm.json" "$CGI_DIR/talkgroups-tgif.json"
+echo "== Installed DMR talkgroup snapshots (BM + TGIF)"
 
 # Seed the M17 reflector registry if the node's copy is missing or is not
 # valid DVRef JSON. (Oct 31 2026: the install-time prime once saved a
