@@ -170,9 +170,15 @@
     <button class="net-btn" data-net="ksdmr">KS-DMR</button>
   </div>
   <div style="margin-bottom:10px;">
-    <input type="search" id="dmr-preset-search" placeholder="Search DMR presets by name or TG..." autocomplete="off"
+    <input type="search" id="dmr-preset-search" placeholder="Search presets and talkgroups by name or TG..." autocomplete="off"
       style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
   </div>
+  <div style="margin-bottom:8px;">
+    <select id="dmr-tg-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+      <option value="">-- Choose a talkgroup --</option>
+    </select>
+  </div>
+  <div style="font-size:0.8em; color:#64748b; margin-bottom:10px;" id="dmr-tg-note"></div>
   <div class="preset-grid" id="preset-grid">
     <!-- Populated by JS -->
   </div>
@@ -362,7 +368,7 @@ function renderReflectorOptions(selectEl, list, query) {
     const opt = document.createElement("option");
     opt.value = "";
     opt.disabled = true;
-    opt.textContent = "No matching reflectors";
+    opt.textContent = "No matches in list";
     selectEl.appendChild(opt);
     return;
   }
@@ -1016,9 +1022,80 @@ document.querySelectorAll(".net-btn").forEach(b => {
   b.onclick = () => {
     selectedNet = b.dataset.net;
     buildPresets(); // Rebuilds grid and updates button highlights
+    loadTalkgroups(selectedNet); // Dropdown follows the selected network
   };
 });
-document.getElementById("dmr-preset-search").addEventListener("input", buildPresets);
+document.getElementById("dmr-preset-search").addEventListener("input", () => { buildPresets(); renderDmrTg(); });
+
+// Full DMR talkgroup lists (BM + TGIF) for the dropdown, fetched via the
+// CGI (live API + cache + bundled snapshot). Picking an entry fills the
+// custom tune box with the RAW talkgroup; the existing Tune button then
+// applies the selected network's prefix, same as a hand-typed TG.
+const dmrTgLists = {};
+const dmrTgNotes = {};
+let dmrTgNet = null; // network the dropdown is currently showing
+
+function withTalkgroupExtras(net, list) {
+  const out = (list || []).slice();
+  const pin = (id, name) => {
+    const i = out.findIndex(r => String(r.id) === id);
+    if (i >= 0) out.splice(i, 1);
+    out.unshift({ id, name });
+  };
+  // Service TGs the public lists omit: TGIF's scan lives on 777 (the
+  // network's own list doesn't carry it), BM's parrot 9990 is a private
+  // call, not a talkgroup. Pin them at the top like YSF's Echo.
+  if (net === "tgif") pin("777", "TGIF Scan");
+  if (net === "bm") pin("9990", "Parrot (private call)");
+  return out;
+}
+
+function renderDmrTg() {
+  const sel = document.getElementById("dmr-tg-select");
+  const searchEl = document.getElementById("dmr-preset-search");
+  renderReflectorOptions(sel, dmrTgLists[dmrTgNet || selectedNet] || [],
+    searchEl ? searchEl.value : "");
+}
+
+function loadTalkgroups(net) {
+  const note = document.getElementById("dmr-tg-note");
+  dmrTgNet = net;
+  if (net === "ksdmr") {
+    // KS-DMR carries exactly one talkgroup (3120, TS2) -- no list to fetch.
+    dmrTgLists.ksdmr = [{ id: "3120", name: "Kansas Statewide" }];
+    renderDmrTg();
+    note.textContent = "KS-DMR carries TG 3120 only.";
+    return;
+  }
+  if (dmrTgLists[net]) {
+    renderDmrTg();
+    note.textContent = dmrTgNotes[net] || "";
+    return;
+  }
+  note.textContent = "Loading talkgroup list...";
+  renderDmrTg();
+  api("talkgroups", { net }, 25000).then(r => {
+    if (dmrTgNet !== net) return; // user switched networks meanwhile
+    if (r.ok && r.talkgroups && r.talkgroups.length > 0) {
+      dmrTgLists[net] = withTalkgroupExtras(net, r.talkgroups);
+      renderDmrTg();
+      const src = r.source === "live" ? "live list" :
+                  r.source === "cache" ? "cached list" : "built-in snapshot";
+      note.textContent = r.talkgroups.length + " talkgroups (" + src + ") — pick one to fill the tune box.";
+      dmrTgNotes[net] = note.textContent;
+    } else {
+      note.textContent = "Talkgroup list unavailable — presets and manual entry still work.";
+    }
+  }).catch(() => {
+    if (dmrTgNet === net) {
+      note.textContent = "Talkgroup list unavailable — presets and manual entry still work.";
+    }
+  });
+}
+
+document.getElementById("dmr-tg-select").addEventListener("change", (e) => {
+  if (e.target.value) document.getElementById("custom-tg").value = e.target.value;
+});
 
 function setLamp(which, on, label) {
   const lamp = document.getElementById("lamp-" + which);
@@ -1035,6 +1112,7 @@ function refreshLive() {
 }
 
 buildPresets();
+loadTalkgroups(selectedNet);
 refreshStatus();
 refreshLive();
 loadGains();
