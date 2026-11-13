@@ -115,9 +115,14 @@ P25_ENABLE=$(ini_get "P25 Network" "Enable")
   fail "unexpected [P25 Network] Enable value '${P25_ENABLE:-<missing>}' -- nothing changed"
 
 # A bridge restart must not walk into the known empty-DMR-password assert.
+# NOTE: the __SET_DMR_LOCAL_PASSWORD__ marker is NOT empty -- it is the
+# literal non-empty value this node runs with (the local DMRGateway RPTL
+# handshake does not verify it; verified against the real binary Oct 18
+# 2026). Only a truly empty/missing password blocks the restart. (The
+# first version of this script also rejected the marker and stopped on
+# the live node on Nov 13 2026 -- that check was wrong.)
 DMR_PASSWORD=$(ini_get "DMR Network" "Password")
 [[ -n "$DMR_PASSWORD" ]] || fail "[DMR Network] Password is empty -- fix that before restarting mmdvm_bridge; nothing changed"
-[[ "$DMR_PASSWORD" != __SET_* ]] || fail "[DMR Network] Password is still an unfilled __SET_ marker -- nothing changed"
 
 service_exists mmdvm_bridge || fail "systemd unit mmdvm_bridge not found -- nothing changed"
 service_exists p25gateway || fail "systemd unit p25gateway not found -- nothing changed"
