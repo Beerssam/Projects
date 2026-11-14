@@ -1,0 +1,13 @@
+[Unit]
+Description=NXDNGateway -- xmode NXDN leg
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/NXDNGateway/NXDNGateway /opt/xmode/legs/nxdn/NXDNGateway.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

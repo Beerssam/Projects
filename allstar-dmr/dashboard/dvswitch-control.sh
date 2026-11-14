@@ -47,6 +47,14 @@ NET_STATUS="$(dirname "$0" 2>/dev/null)/net-status.sh"
 # mode/tune machinery entirely. See allstar-dmr/m17/DESIGN.md.
 M17_SWITCH="$(dirname "$0" 2>/dev/null)/m17-switch.sh"
 [[ -x "$M17_SWITCH" ]] || M17_SWITCH="/var/www/cgi-bin/m17-switch.sh"
+# Privileged cross-mode bridge helper (same pattern): link/tune/AGC
+# control for the hub-and-legs bridge in allstar-dmr/xmode. Installed to
+# /opt/xmode by install-xmode.sh and copied beside this CGI by
+# install.sh so the sudoers rule can name it. Absent = bridge not
+# installed; the CGI reports that honestly instead of failing the page.
+XMODE_SWITCH="$(dirname "$0" 2>/dev/null)/xmode-switch.sh"
+[[ -x "$XMODE_SWITCH" ]] || XMODE_SWITCH="/var/www/cgi-bin/xmode-switch.sh"
+[[ -x "$XMODE_SWITCH" ]] || XMODE_SWITCH="/opt/xmode/xmode-switch.sh"
 # USRP2M17 config (env override for testing). Read directly by the CGI for
 # status display; only the helper may write it.
 M17_INI="${M17_INI:-/etc/USRP2M17.ini}"
@@ -572,6 +580,105 @@ do_m17() {
     "$(json_escape "$port")" "$(json_escape "$linked")" \
     "$(json_escape "$linked1999")" "$(json_escape "$ack")" \
     "$(json_escape "$note")"
+}
+
+do_xmode() {
+  # ?action=xmode&op=status|bridge-start|bridge-stop|tune|agc-shim|agc-ab|gain
+  # All work goes through the privileged xmode-switch helper (same
+  # pattern as m17). The CGI validates against allowlists, runs it via
+  # sudo, and renders its key=value output as JSON -- ok:false honestly
+  # on any failure. If the helper is absent the bridge isn't installed:
+  # status degrades to installed:false so the page can say so.
+  local op leg dest module which value dir out rc k v
+  local note="" o_dest="" o_bridge="" o_shim="" o_abagc="" o_gain=""
+  op=$(get_param op)
+  case "$op" in
+    status|bridge-start|bridge-stop|tune|agc-shim|agc-ab|gain) ;;
+    *) printf '{"ok":false,"error":"Invalid xmode op"}'; return ;;
+  esac
+  if [[ ! -x "$XMODE_SWITCH" ]]; then
+    if [[ "$op" == "status" ]]; then
+      printf '{"ok":true,"op":"status","installed":false,"note":"cross-mode bridge not installed"}'
+    else
+      printf '{"ok":false,"error":"xmode helper not installed"}'
+    fi
+    return
+  fi
+  if [[ "$op" == "status" ]]; then
+    out=$(sudo "$XMODE_SWITCH" status 2>/dev/null); rc=$?
+    if [[ $rc -ne 0 ]]; then printf '{"ok":false,"error":"xmode status failed"}'; return; fi
+    printf '%s' "$out" | python3 -c '
+import sys, json
+root = {}
+for line in sys.stdin:
+    line = line.strip()
+    if "=" not in line:
+        continue
+    k, v = line.split("=", 1)
+    parts = k.split(".")
+    node = root
+    for p in parts[:-1]:
+        node = node.setdefault(p, {})
+    node[parts[-1]] = v
+root["ok"] = True
+root["op"] = "status"
+root["installed"] = True
+print(json.dumps(root))
+'
+    return
+  fi
+  leg=$(get_param leg); which=$(get_param which); value=$(get_param value)
+  local args=()
+  case "$op" in
+    bridge-start)
+      local lega legb
+      lega=$(get_param leg_a); legb=$(get_param leg_b)
+      case "$lega" in dmr|ysf|p25|nxdn|m17) ;; *) printf '{"ok":false,"error":"Invalid leg A"}'; return ;; esac
+      case "$legb" in dmr|ysf|p25|nxdn|m17) ;; *) printf '{"ok":false,"error":"Invalid leg B"}'; return ;; esac
+      [[ "$lega" != "$legb" ]] || { printf '{"ok":false,"error":"Pick two different legs"}'; return; }
+      args=(bridge-start "$lega" "$legb") ;;
+    bridge-stop)
+      args=(bridge-stop) ;;
+    tune)
+      dest=$(get_param dest); module=$(get_param module)
+      case "$leg" in
+        dmr)  [[ "$dest" =~ ^[0-9]{1,7}$ ]] || { printf '{"ok":false,"error":"Invalid DMR dial string"}'; return; }
+              args=(tune dmr "$dest") ;;
+        ysf)  [[ "$dest" =~ ^[A-Za-z0-9_.\ -]{1,48}$ ]] || { printf '{"ok":false,"error":"Invalid YSF destination"}'; return; }
+              args=(tune ysf "$dest") ;;
+        p25|nxdn) [[ "$dest" =~ ^[0-9]{1,6}$ ]] || { printf '{"ok":false,"error":"Invalid destination"}'; return; }
+              args=(tune "$leg" "$dest") ;;
+        m17)  [[ "$dest" =~ ^(M17-)?[A-Za-z0-9]{1,12}$ ]] || { printf '{"ok":false,"error":"Invalid M17 reflector"}'; return; }
+              [[ "$module" =~ ^[A-Z]$ ]] || { printf '{"ok":false,"error":"Invalid module (A-Z)"}'; return; }
+              args=(tune m17 "$dest" "$module") ;;
+        *) printf '{"ok":false,"error":"Invalid leg"}'; return ;;
+      esac ;;
+    agc-shim)
+      case "$which" in main|bridge) ;; *) printf '{"ok":false,"error":"Invalid target"}'; return ;; esac
+      case "$value" in on|bypass) ;; *) printf '{"ok":false,"error":"Invalid shim value"}'; return ;; esac
+      args=(agc-shim "$which" "$value") ;;
+    agc-ab)
+      case "$which" in main|dmr|ysf|p25|nxdn) ;; *) printf '{"ok":false,"error":"Invalid target"}'; return ;; esac
+      case "$value" in agc|gain) ;; *) printf '{"ok":false,"error":"Invalid AGC value"}'; return ;; esac
+      args=(agc-ab "$which" "$value") ;;
+    gain)
+      dir=$(get_param dir)
+      case "$which" in main|dmr|ysf|p25|nxdn) ;; *) printf '{"ok":false,"error":"Invalid target"}'; return ;; esac
+      case "$dir" in usrp|tlv) ;; *) printf '{"ok":false,"error":"Invalid direction"}'; return ;; esac
+      [[ "$value" =~ ^[0-9]+(\.[0-9]{1,2})?$ ]] || { printf '{"ok":false,"error":"Invalid gain value"}'; return; }
+      args=(gain "$which" "$dir" "$value") ;;
+  esac
+  out=$(sudo "$XMODE_SWITCH" "${args[@]}" 2>/dev/null); rc=$?
+  while IFS='=' read -r k v; do
+    case "$k" in
+      note) note="$v" ;; dest) o_dest="$v" ;; bridge) o_bridge="$v" ;;
+      shim) o_shim="$v" ;; ab_agc) o_abagc="$v" ;; gain) o_gain="$v" ;;
+    esac
+  done <<< "$out"
+  printf '{"ok":%s,"op":"%s","note":"%s","dest":"%s","bridge":"%s","shim":"%s","ab_agc":"%s","gain":"%s"}' \
+    "$([[ $rc -eq 0 ]] && echo true || echo false)" "$op" \
+    "$(json_escape "$note")" "$(json_escape "$o_dest")" "$(json_escape "$o_bridge")" \
+    "$o_shim" "$o_abagc" "$o_gain"
 }
 
 do_live() {
@@ -1274,5 +1381,6 @@ case "$action" in
   talkgroups) do_talkgroups ;;
   gain)       do_gain ;;
   m17)        do_m17 ;;
+  xmode)      do_xmode ;;
   *)          printf '{"ok":false,"error":"Unknown action"}' ;;
 esac

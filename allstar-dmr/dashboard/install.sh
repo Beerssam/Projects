@@ -27,6 +27,7 @@ HELPER_SRC="$SCRIPT_DIR/mode-switch.sh"
 GAIN_SRC="$SCRIPT_DIR/gain-set.sh"
 NET_SRC="$SCRIPT_DIR/net-status.sh"
 M17_SRC="$SCRIPT_DIR/m17-switch.sh"
+XMODE_SRC="$SCRIPT_DIR/../xmode/xmode-switch.sh"
 TG_BM_SRC="$SCRIPT_DIR/talkgroups-bm.json"
 TG_TGIF_SRC="$SCRIPT_DIR/talkgroups-tgif.json"
 
@@ -82,6 +83,10 @@ if [[ -f "$CGI_DIR/m17-switch.sh" ]]; then
   cp "$CGI_DIR/m17-switch.sh" "$CGI_DIR/m17-switch.sh.bak.$TS"
   echo "== Backed up existing m17-switch helper"
 fi
+if [[ -f "$CGI_DIR/xmode-switch.sh" ]]; then
+  cp "$CGI_DIR/xmode-switch.sh" "$CGI_DIR/xmode-switch.sh.bak.$TS"
+  echo "== Backed up existing xmode-switch helper"
+fi
 for tgf in talkgroups-bm.json talkgroups-tgif.json; do
   if [[ -f "$CGI_DIR/$tgf" ]]; then
     cp "$CGI_DIR/$tgf" "$CGI_DIR/$tgf.bak.$TS"
@@ -97,15 +102,22 @@ cp "$GAIN_SRC" "$CGI_DIR/gain-set.sh"
 cp "$NET_SRC" "$CGI_DIR/net-status.sh"
 cp "$M17_SRC" "$CGI_DIR/m17-switch.sh"
 chmod 755 "$CGI_DIR/dvswitch-control.sh" "$CGI_DIR/mode-switch.sh" "$CGI_DIR/gain-set.sh" "$CGI_DIR/net-status.sh" "$CGI_DIR/m17-switch.sh"
+if [[ -f "$XMODE_SRC" ]]; then
+  cp "$XMODE_SRC" "$CGI_DIR/xmode-switch.sh"
+  chmod 755 "$CGI_DIR/xmode-switch.sh"
+  echo "== Installed xmode-switch helper (cross-mode bridge)"
+else
+  echo "== xmode-switch.sh not in repo checkout; Bridge card will report not installed"
+fi
 # Remove stale copies from the old (wrong) location if they exist there, so a
 # future reader doesn't mistake them for the live ones.
-for stale in dvswitch-control.sh mode-switch.sh gain-set.sh net-status.sh m17-switch.sh; do
+for stale in dvswitch-control.sh mode-switch.sh gain-set.sh net-status.sh m17-switch.sh xmode-switch.sh; do
   if [[ -f /usr/lib/cgi-bin/$stale && "$CGI_DIR" != "/usr/lib/cgi-bin" ]]; then
     rm -f "/usr/lib/cgi-bin/$stale"
     echo "== Removed stale $stale from /usr/lib/cgi-bin"
   fi
 done
-echo "== Installed HTML, CGI and helpers (mode-switch, gain-set, net-status, m17-switch)"
+echo "== Installed HTML, CGI and helpers (mode-switch, gain-set, net-status, m17-switch, xmode-switch)"
 
 # DMR talkgroup snapshots (BM + TGIF): the CGI serves the dropdown lists
 # from a live API fetch when it can and falls back to these bundled files,
@@ -163,10 +175,12 @@ fi
 SUDOERS_FILE="/etc/sudoers.d/dvswitch-control"
 DVS=$(find /opt /usr/local -name "dvswitch.sh" 2>/dev/null | head -1)
 if [[ -n "$DVS" ]]; then
-  printf 'www-data ALL=(ALL) NOPASSWD: %s tune *, %s mode *, %s/mode-switch.sh *, %s/gain-set.sh *, %s/net-status.sh *, %s/m17-switch.sh *\n' \
-    "$DVS" "$DVS" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" > "$SUDOERS_FILE"
+  XMODE_RULE=""
+  [[ -f "$CGI_DIR/xmode-switch.sh" ]] && XMODE_RULE=", $CGI_DIR/xmode-switch.sh *"
+  printf 'www-data ALL=(ALL) NOPASSWD: %s tune *, %s mode *, %s/mode-switch.sh *, %s/gain-set.sh *, %s/net-status.sh *, %s/m17-switch.sh *%s\n' \
+    "$DVS" "$DVS" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" "$CGI_DIR" "$XMODE_RULE" > "$SUDOERS_FILE"
   chmod 440 "$SUDOERS_FILE"
-  echo "== Wrote sudoers rule for www-data -> dvswitch.sh + mode-switch.sh + gain-set.sh + net-status.sh + m17-switch.sh"
+  echo "== Wrote sudoers rule for www-data -> dvswitch.sh + mode-switch.sh + gain-set.sh + net-status.sh + m17-switch.sh + xmode-switch.sh"
 else
   echo "!! dvswitch.sh not found; sudoers rule skipped (tune/mode will fail)" >&2
 fi

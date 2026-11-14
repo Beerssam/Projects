@@ -1,0 +1,14 @@
+[Unit]
+Description=USRP2M17 -- xmode M17 leg (hub leg node 1994, KF0RIZ)
+After=network-online.target asterisk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/log/usrp2m17-xmode /var/lib/usrp2m17-xmode
+ExecStart=/usr/local/bin/USRP2M17 /etc/USRP2M17-xmode.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

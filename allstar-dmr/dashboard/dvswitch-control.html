@@ -253,6 +253,51 @@
   </div>
 </div>
 
+<div class="card" id="xmode-card">
+  <h2>Cross-Mode Bridge</h2>
+  <div id="xmode-absent" class="hidden" style="font-size:0.9em; color:#94a3b8;">
+    The cross-mode bridge is not installed on this node yet.
+  </div>
+  <div id="xmode-body">
+    <div class="status-row"><span class="label">Bridge</span><span id="xm-bridge-state">...</span></div>
+    <div style="display:flex; gap:8px; margin-bottom:8px;">
+      <select id="xm-side-a" style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+      <select id="xm-side-b" style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+    </div>
+    <div style="display:flex; gap:8px; margin-bottom:6px;">
+      <button class="preset-btn" id="xm-bridge-start" style="flex:1; text-align:center;"><span class="alias">Start bridge</span></button>
+      <button class="preset-btn" id="xm-bridge-stop" style="flex:1; text-align:center;"><span class="alias">Stop bridge</span></button>
+      <button class="preset-btn" id="xm-bridge-shim" style="flex:1; text-align:center;"><span class="alias">Bridge AGC: ...</span></button>
+    </div>
+    <div style="font-size:0.8em; color:#64748b; margin-bottom:12px;">
+      Digital-to-digital only: the two legs cross-connect inside DVSwitch —
+      nothing goes through your analog node, and no node numbers are
+      involved. One bridge at a time; the leg stacks run only while a
+      bridge is up. Bridge AGC levels both directions through the
+      usrp-agc shim; bypass = raw audio.
+    </div>
+    <div id="xm-legs"></div>
+    <div style="border-top:1px solid #1e293b; margin-top:14px; padding-top:12px;">
+      <div class="status-row"><span class="label">Main node audio · auto-level</span><span id="xm-main-agc-state">...</span></div>
+      <div style="display:flex; gap:8px;">
+        <button class="preset-btn" id="xm-main-abagc" style="flex:1; text-align:center;"><span class="alias">Digital &#8594; radio AGC</span></button>
+        <button class="preset-btn" id="xm-main-shim" style="flex:1; text-align:center;"><span class="alias">Radio &#8594; digital AGC</span></button>
+      </div>
+      <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+        Radio &#8594; digital runs through the usrp-agc shim (the direction
+        Analog_Bridge has no AGC for). Turning it off = bypass, raw audio.
+        The Audio Levels sliders below always stay available as manual control.
+      </div>
+    </div>
+    <div style="font-size:0.85em; color:#94a3b8; margin-top:10px;" id="xm-msg"></div>
+    <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
+      Tune each leg to one of your own TGs/reflectors first, then start the
+      bridge. Bridging a busy public talkgroup ties it to the other leg
+      while the bridge is up.
+    </div>
+  </div>
+</div>
+
 <div class="card">
   <h2>Services</h2>
   <div id="services">
@@ -1111,13 +1156,366 @@ function refreshLive() {
   }).catch(() => {});
 }
 
+// ---- Cross-Mode Bridge (DVSwitch legs + crossover, design v2) ----
+// All control goes through ?action=xmode -> xmode-switch.sh. A bridge
+// cross-connects two leg stacks inside DVSwitch (AB<->AB USRP
+// crossover through the usrp-agc shim) -- nothing passes through the
+// analog node. Leg destinations reuse the same lists as the rest of
+// the panel (DMR talkgroups, per-mode reflectors, the M17 registry).
+// Auto-level: each leg's Analog_Bridge AGC (network -> bridge), the
+// bridge shim (both directions between the legs), and the main-chain
+// pair (AB AGC + main shim). Manual gain sliders per leg sit under
+// the toggles and always work -- moving one takes that direction out
+// of AGC into manual gain, which is the intended override.
+const XM_LEGS = [
+  { leg: "dmr",  label: "DMR" },
+  { leg: "ysf",  label: "YSF" },
+  { leg: "p25",  label: "P25" },
+  { leg: "nxdn", label: "NXDN" },
+  { leg: "m17",  label: "M17" },
+];
+const xmLists = {};   // leg -> [{id,name}] for reflector legs; "dmr-<net>" for DMR
+let xmState = null;
+let xmDmrNet = "bm";
+
+function xmMsg(text) {
+  document.getElementById("xm-msg").textContent = text || "";
+}
+
+function xmApi(params, timeoutMs = 20000) {
+  return api("xmode", params, timeoutMs);
+}
+
+function buildBridge() {
+  const wrap = document.getElementById("xm-legs");
+  XM_LEGS.forEach(({ leg, label }) => {
+    const div = document.createElement("div");
+    div.style.borderTop = "1px solid #1e293b";
+    div.style.marginTop = "14px";
+    div.style.paddingTop = "12px";
+    let dest = "";
+    if (leg === "dmr") {
+      dest = `
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <button class="preset-btn xm-dmr-net" data-net="bm" style="flex:1; text-align:center;"><span class="alias">BrandMeister</span></button>
+          <button class="preset-btn xm-dmr-net" data-net="tgif" style="flex:1; text-align:center;"><span class="alias">TGIF</span></button>
+          <button class="preset-btn xm-dmr-net" data-net="ksdmr" style="flex:1; text-align:center;"><span class="alias">KS-DMR</span></button>
+        </div>
+        <select id="xm-dmr-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;"></select>
+        <input type="text" id="xm-dmr-input" inputmode="numeric" placeholder="Or enter TG manually..." autocomplete="off"
+          style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;">`;
+    } else if (leg === "m17") {
+      dest = `
+        <input type="search" id="xm-m17-search" placeholder="Search M17 reflectors..." autocomplete="off"
+          style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;">
+        <select id="xm-m17-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;"></select>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <input type="text" id="xm-m17-input" placeholder="Or type reflector (e.g. M17-M17)" autocomplete="off" style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;">
+          <select id="xm-m17-module" style="flex:0 0 74px; min-width:0; padding:12px 4px; text-align:center; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+        </div>`;
+    } else {
+      dest = `
+        <input type="search" id="xm-${leg}-search" placeholder="Search ${label} reflectors..." autocomplete="off"
+          style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;">
+        <select id="xm-${leg}-select" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;"></select>
+        <input type="text" id="xm-${leg}-input" placeholder="Or enter manually..." autocomplete="off"
+          style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em; margin-bottom:8px;">`;
+    }
+    let agc = "";
+    if (leg !== "m17") {
+      agc = `
+        <div style="display:flex; gap:8px; margin-top:8px;">
+          <button class="preset-btn" id="xm-${leg}-abagc" style="flex:1; text-align:center;"><span class="alias">Net &#8594; bridge AGC</span></button>
+        </div>
+        <div style="display:flex; gap:14px; margin-top:10px;">
+          <label style="flex:1; font-size:0.85em; color:#94a3b8;">Net &#8594; bridge gain <span id="xm-${leg}-usrp-val" style="color:#38bdf8; font-weight:600;">...</span>
+            <input type="range" id="xm-${leg}-usrp-slider" min="0" max="2" step="0.05" value="1" style="width:100%;"></label>
+          <label style="flex:1; font-size:0.85em; color:#94a3b8;">Bridge &#8594; net gain <span id="xm-${leg}-tlv-val" style="color:#38bdf8; font-weight:600;">...</span>
+            <input type="range" id="xm-${leg}-tlv-slider" min="0" max="2" step="0.05" value="1" style="width:100%;"></label>
+        </div>`;
+    } else {
+      agc = `<div style="font-size:0.8em; color:#64748b; margin-top:8px;">M17 leg levels are fixed in the bridge (USRP2M17 gain offsets) — no AGC on this leg.</div>`;
+    }
+    div.innerHTML = `
+      <div class="status-row"><span class="label">${label} Leg</span><span id="xm-${leg}-state">...</span></div>
+      ${dest}
+      <div style="display:flex; gap:8px;">
+        <button class="preset-btn" id="xm-${leg}-tune" style="flex:1; text-align:center;"><span class="alias">Tune leg</span></button>
+      </div>
+      ${agc}`;
+    wrap.appendChild(div);
+  });
+
+  // Bridge side selects (options refreshed with destinations on poll)
+  ["xm-side-a", "xm-side-b"].forEach(id => {
+    const sel = document.getElementById(id);
+    XM_LEGS.forEach(({ leg, label }) => {
+      const o = document.createElement("option");
+      o.value = leg; o.textContent = label; sel.appendChild(o);
+    });
+  });
+  document.getElementById("xm-side-a").value = "dmr";
+  document.getElementById("xm-side-b").value = "ysf";
+
+  // M17 module options A-Z
+  const modSel = document.getElementById("xm-m17-module");
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").forEach(m => {
+    const o = document.createElement("option");
+    o.value = m; o.textContent = m; modSel.appendChild(o);
+  });
+
+  // Wire events
+  document.querySelectorAll(".xm-dmr-net").forEach(b => {
+    b.onclick = () => { xmDmrNet = b.dataset.net; xmRenderDmrNetButtons(); xmLoadDmrList(); };
+  });
+  document.getElementById("xm-dmr-select").addEventListener("change", (e) => {
+    if (e.target.value) document.getElementById("xm-dmr-input").value = e.target.value;
+  });
+  ["ysf", "p25", "nxdn", "m17"].forEach(leg => {
+    document.getElementById(`xm-${leg}-search`).addEventListener("input", (e) => {
+      renderReflectorOptions(document.getElementById(`xm-${leg}-select`), xmLists[leg] || [], e.target.value);
+    });
+    const sel = document.getElementById(`xm-${leg}-select`);
+    sel.addEventListener("change", () => {
+      if (sel.value) document.getElementById(`xm-${leg}-input`).value = sel.value;
+    });
+  });
+  XM_LEGS.forEach(({ leg }) => {
+    document.getElementById(`xm-${leg}-tune`).onclick = () => xmTune(leg);
+    if (leg !== "m17") {
+      document.getElementById(`xm-${leg}-abagc`).onclick = () => xmToggleAbAgc(leg);
+      ["usrp", "tlv"].forEach(dir => {
+        const slider = document.getElementById(`xm-${leg}-${dir}-slider`);
+        slider.addEventListener("input", () => {
+          document.getElementById(`xm-${leg}-${dir}-val`).textContent = Number(slider.value).toFixed(2);
+        });
+        slider.addEventListener("change", () => xmGain(leg, dir, slider.value));
+      });
+    }
+  });
+  document.getElementById("xm-bridge-start").onclick = xmBridgeStart;
+  document.getElementById("xm-bridge-stop").onclick = xmBridgeStop;
+  document.getElementById("xm-bridge-shim").onclick = () => xmToggleShim("bridge");
+  document.getElementById("xm-main-abagc").onclick = () => xmToggleAbAgc("main");
+  document.getElementById("xm-main-shim").onclick = () => xmToggleShim("main");
+
+  xmRenderDmrNetButtons();
+  xmLoadDmrList();
+  ["ysf", "p25", "nxdn", "m17"].forEach(xmLoadLegList);
+}
+
+function xmRenderDmrNetButtons() {
+  document.querySelectorAll(".xm-dmr-net").forEach(b => {
+    b.style.background = b.dataset.net === xmDmrNet ? "#1d4ed8" : "";
+  });
+}
+
+function xmLoadDmrList() {
+  const sel = document.getElementById("xm-dmr-select");
+  const key = "dmr-" + xmDmrNet;
+  if (xmDmrNet === "ksdmr") {
+    xmLists[key] = [{ id: "3120", name: "Kansas Statewide" }];
+    renderReflectorOptions(sel, xmLists[key], "");
+    return;
+  }
+  if (xmLists[key]) { renderReflectorOptions(sel, xmLists[key], ""); return; }
+  api("talkgroups", { net: xmDmrNet }, 25000).then(r => {
+    if (r.ok && r.talkgroups && r.talkgroups.length > 0) {
+      xmLists[key] = withTalkgroupExtras(xmDmrNet, r.talkgroups);
+    } else {
+      xmLists[key] = [];
+    }
+    if (key === "dmr-" + xmDmrNet) renderReflectorOptions(sel, xmLists[key], "");
+  }).catch(() => { xmLists[key] = []; renderReflectorOptions(sel, [], ""); });
+}
+
+function xmLoadLegList(leg) {
+  const mode = leg.toUpperCase();
+  const sel = document.getElementById(`xm-${leg}-select`);
+  const cached = reflectorCache[leg];
+  if (cached) {
+    xmLists[leg] = leg === "ysf" ? withDashboardReflectorExtras("YSF", cached) : cached;
+    renderReflectorOptions(sel, xmLists[leg], "");
+    return;
+  }
+  api("reflectors", { mode: leg }).then(r => {
+    let list = (r.ok && r.reflectors && r.reflectors.length > 0) ? r.reflectors : (REFLECTORS_FALLBACK[mode] || []);
+    reflectorCache[leg] = list;
+    xmLists[leg] = leg === "ysf" ? withDashboardReflectorExtras("YSF", list) : list;
+    renderReflectorOptions(sel, xmLists[leg], "");
+  }).catch(() => {
+    xmLists[leg] = REFLECTORS_FALLBACK[mode] || [];
+    renderReflectorOptions(sel, xmLists[leg], "");
+  });
+}
+
+function xmAfterAction(r, what) {
+  if (r.ok) {
+    xmMsg(what + " ✓" + (r.note ? " — " + r.note : ""));
+  } else {
+    xmMsg(what + " failed" + (r.note ? " — " + r.note : (r.error ? " — " + r.error : "")));
+  }
+  setTimeout(refreshBridge, 600);
+}
+
+function xmBridgeStart() {
+  const a = document.getElementById("xm-side-a").value;
+  const b = document.getElementById("xm-side-b").value;
+  if (a === b) { xmMsg("Pick two different legs to bridge."); return; }
+  xmMsg("Starting bridge " + a.toUpperCase() + " ↔ " + b.toUpperCase() + "...");
+  xmApi({ op: "bridge-start", leg_a: a, leg_b: b })
+    .then(r => xmAfterAction(r, "Bridge start"))
+    .catch(() => xmMsg("Bridge request failed (network/CGI)"));
+}
+
+function xmBridgeStop() {
+  xmMsg("Stopping bridge...");
+  xmApi({ op: "bridge-stop" })
+    .then(r => xmAfterAction(r, "Bridge stop"))
+    .catch(() => xmMsg("Bridge request failed (network/CGI)"));
+}
+
+function xmTune(leg) {
+  let dest = "", module = "";
+  if (leg === "dmr") {
+    const raw = document.getElementById("xm-dmr-input").value.trim();
+    dest = formatTg(raw, xmDmrNet);
+    if (!dest) { xmMsg("Enter a valid talkgroup for the DMR leg."); return; }
+  } else if (leg === "m17") {
+    dest = document.getElementById("xm-m17-input").value.trim();
+    module = document.getElementById("xm-m17-module").value;
+    if (!dest) { xmMsg("Pick or type an M17 reflector for the M17 leg."); return; }
+  } else {
+    dest = document.getElementById(`xm-${leg}-input`).value.trim();
+    if (!dest) { xmMsg("Pick or type a destination for the " + leg.toUpperCase() + " leg."); return; }
+  }
+  xmMsg("Tuning " + leg.toUpperCase() + " leg to " + dest + (module ? " " + module : "") + "...");
+  const params = { op: "tune", leg, dest };
+  if (module) params.module = module;
+  xmApi(params, leg === "m17" ? 90000 : 20000)
+    .then(r => xmAfterAction(r, "Tune " + leg.toUpperCase()))
+    .catch(() => xmMsg("Tune request failed (network/CGI)"));
+}
+
+function xmLegState(which) {
+  if (!xmState) return null;
+  if (which === "main") return xmState.main;
+  if (which === "bridge") return xmState.bridge;
+  return (xmState.leg || {})[which];
+}
+
+function xmToggleAbAgc(which) {
+  const st = xmLegState(which);
+  if (!st) return;
+  const value = st.ab_agc === "1" ? "gain" : "agc";
+  xmApi({ op: "agc-ab", which, value })
+    .then(r => xmAfterAction(r, "AGC " + which))
+    .catch(() => xmMsg("AGC request failed (network/CGI)"));
+}
+
+function xmToggleShim(which) {
+  const st = xmLegState(which);
+  if (!st) return;
+  const value = st.shim === "bypass" ? "on" : "bypass";
+  xmApi({ op: "agc-shim", which, value })
+    .then(r => xmAfterAction(r, "Shim " + which))
+    .catch(() => xmMsg("Shim request failed (network/CGI)"));
+}
+
+function xmGain(leg, dir, value) {
+  xmApi({ op: "gain", which: leg, dir, value: Number(value).toFixed(2) })
+    .then(r => xmAfterAction(r, "Gain " + leg + " " + dir))
+    .catch(() => xmMsg("Gain request failed (network/CGI)"));
+}
+
+function xmAgcLabels(prefix, st) {
+  const ab = document.getElementById(prefix + "-abagc");
+  const sh = document.getElementById(prefix + "-shim");
+  if (ab) ab.querySelector(".alias").textContent =
+    (prefix === "xm-main" ? "Digital → radio AGC: " : "Net → bridge AGC: ") + (st.ab_agc === "1" ? "ON" : "OFF");
+  if (sh) sh.querySelector(".alias").textContent =
+    "Radio → digital AGC: " + (st.shim === "bypass" ? "BYPASSED" : "ON");
+}
+
+function xmSideLabel(legKey) {
+  const meta = XM_LEGS.find(x => x.leg === legKey);
+  const st = (xmState && xmState.leg && xmState.leg[legKey]) || {};
+  return (meta ? meta.label : legKey.toUpperCase()) + (st.dest ? " · " + st.dest : "");
+}
+
+function renderBridge(r) {
+  xmState = r;
+  const absent = document.getElementById("xmode-absent");
+  const body = document.getElementById("xmode-body");
+  if (r.installed === false) {
+    absent.classList.remove("hidden");
+    body.classList.add("hidden");
+    return;
+  }
+  absent.classList.add("hidden");
+  body.classList.remove("hidden");
+  const br = r.bridge || {};
+  document.getElementById("xm-bridge-state").textContent =
+    br.active === "1"
+      ? "UP · " + xmSideLabel(br.a) + " ↔ " + xmSideLabel(br.b)
+      : "Down";
+  const shimBtn = document.getElementById("xm-bridge-shim");
+  if (shimBtn) shimBtn.querySelector(".alias").textContent =
+    "Bridge AGC: " + (br.shim === "bypass" ? "BYPASSED" : "ON");
+  ["xm-side-a", "xm-side-b"].forEach(id => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    XM_LEGS.forEach(({ leg }) => {
+      const o = sel.querySelector(`option[value="${leg}"]`);
+      if (o) o.textContent = xmSideLabel(leg);
+    });
+    if (cur) sel.value = cur;
+    if (document.activeElement !== sel && br.active === "1") {
+      sel.value = id === "xm-side-a" ? br.a : br.b;
+    }
+  });
+  XM_LEGS.forEach(({ leg }) => {
+    const st = (r.leg || {})[leg] || {};
+    const el = document.getElementById(`xm-${leg}-state`);
+    if (st.bridged === "1") el.textContent = "In bridge" + (st.dest ? " · " + st.dest : "");
+    else if (st.active === "1") el.textContent = "Running" + (st.dest ? " · " + st.dest : "");
+    else el.textContent = "Idle" + (st.dest ? " · " + st.dest : "");
+    if (leg !== "m17") {
+      xmAgcLabels(`xm-${leg}`, st);
+      ["usrp", "tlv"].forEach(dir => {
+        const slider = document.getElementById(`xm-${leg}-${dir}-slider`);
+        const val = st[dir + "_gain"];
+        if (slider && document.activeElement !== slider && val) {
+          slider.value = val;
+          document.getElementById(`xm-${leg}-${dir}-val`).textContent = Number(val).toFixed(2);
+        }
+      });
+    }
+  });
+  if (r.main) {
+    xmAgcLabels("xm-main", r.main);
+    document.getElementById("xm-main-agc-state").textContent =
+      "AB AGC " + (r.main.ab_agc === "1" ? "on" : "off") + " · shim " +
+      (r.main.shim === "bypass" ? "bypassed" : "on");
+  }
+}
+
+function refreshBridge() {
+  xmApi({ op: "status" }, 15000).then(r => {
+    if (r && (r.ok || r.installed === false)) renderBridge(r);
+  }).catch(() => {});
+}
+
 buildPresets();
 loadTalkgroups(selectedNet);
 refreshStatus();
 refreshLive();
 loadGains();
+buildBridge();
+refreshBridge();
 setInterval(refreshStatus, 15000);
 setInterval(refreshLive, 2500);
+setInterval(refreshBridge, 15000);
 </script>
 </body>
 </html>

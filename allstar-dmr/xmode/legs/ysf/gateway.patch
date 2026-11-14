@@ -1,0 +1,7 @@
+# YSFGateway leg clone patch (see GATEWAY-PATCHES.md). R=required O=optional E=ensure
+R|General|RptPort|4200|4300
+R|Log|FilePath|*|/var/log/mmdvm
+R|Log|FileRoot|*|YSFGateway-XYSF
+O|Remote Commands|Port|6073|6173
+O|Network|Port|42001|42011
+E|Network|Startup|

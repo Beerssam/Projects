@@ -1,0 +1,15 @@
+[Unit]
+Description=USRP AGC pass-through (%i)
+After=network.target
+Before=analog-bridge.service mmdvm-bridge.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/xmode/usrp-agc/usrp_agc.py /opt/xmode/usrp-agc/%i.ini
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=usrp-agc
+User=root
+
+[Install]
+WantedBy=multi-user.target

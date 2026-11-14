@@ -1,0 +1,13 @@
+[Unit]
+Description=Analog_Bridge -- xmode P25 leg (hub bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/Analog_Bridge/Analog_Bridge /opt/xmode/legs/p25/Analog_Bridge.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# NXDNGateway leg clone patch (see GATEWAY-PATCHES.md). R=required O=optional E=ensure
+R|General|RptPort|14021|33021
+R|Log|FilePath|*|/var/log/mmdvm
+R|Log|FileRoot|*|NXDNGateway-XNXDN
+O|Remote Commands|Port|6075|6175
+O|Network|Port|14050|14051
+E|Network|Startup|

@@ -1,0 +1,13 @@
+[Unit]
+Description=DMRGateway -- xmode DMR leg (BM/TGIF/KS-DMR, ESSIDs 608/609/610)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/DMRGateway /opt/xmode/legs/dmr/DMRGateway.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

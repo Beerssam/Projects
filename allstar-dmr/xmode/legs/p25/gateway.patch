@@ -1,0 +1,7 @@
+# P25Gateway leg clone patch (see GATEWAY-PATCHES.md). R=required O=optional E=ensure
+R|General|RptPort|32010|33010
+R|Log|FilePath|*|/var/log/mmdvm
+R|Log|FileRoot|*|P25Gateway-XP25
+O|Remote Commands|Port|6074|6174
+O|Network|Port|41000|41010
+E|Network|Startup|

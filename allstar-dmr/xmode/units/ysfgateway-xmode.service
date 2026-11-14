@@ -1,0 +1,13 @@
+[Unit]
+Description=YSFGateway -- xmode YSF leg
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/YSFGateway/YSFGateway /opt/xmode/legs/ysf/YSFGateway.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

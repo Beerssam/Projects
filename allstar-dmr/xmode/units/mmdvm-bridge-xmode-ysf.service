@@ -1,0 +1,13 @@
+[Unit]
+Description=MMDVM_Bridge -- xmode YSF leg (hub bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/opt/MMDVM_Bridge/MMDVM_Bridge /opt/xmode/legs/ysf/MMDVM_Bridge.ini
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
