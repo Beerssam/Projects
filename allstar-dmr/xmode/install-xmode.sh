@@ -58,15 +58,17 @@ done
 command -v python3 >/dev/null || die "python3 not found"
 
 say "Preflight: main Analog_Bridge [USRP] ports (expect rx 34001 / tx 32001, or rx 32021 / tx 34021 if rerun)"
-AB_RX=$(python3 - "$MAIN_AB_INI" <<'PYEOF'
-import configparser, sys
-c = configparser.ConfigParser(interpolation=None, strict=False)
-c.optionxform = str
-c.read(sys.argv[1])
-vals = dict(c.items("USRP"))
-print(vals.get("rxPort", ""), vals.get("txPort", ""))
-PYEOF
-)
+# NOTE: the live ini carries a bare "include = dvsm.macro" line before
+# its first section header (dvs-generated file) -- configparser dies on
+# that, so read the two ports with a section-scoped awk instead.
+ab_ini_get() {
+  awk -v key="$1" '
+    /^\[/ { in_sec = ($0 == "[USRP]") }
+    in_sec && $0 ~ "^" key "[ \t]*=" {
+      v = $0; sub(/^[^=]*=[ \t]*/, "", v); sub(/[ \t;].*$/, "", v); print v; exit
+    }' "$MAIN_AB_INI" 2>/dev/null
+}
+AB_RX="$(ab_ini_get rxPort) $(ab_ini_get txPort)"
 case "$AB_RX" in
   "34001 32001") REWIRE=1 ;;
   "32021 34021") REWIRE=0; say "main AB already rewired for the shim (rx 32021 / tx 34021)" ;;
@@ -130,7 +132,12 @@ import configparser, os, re, sys
 def load(path):
     c = configparser.ConfigParser(interpolation=None, strict=False)
     c.optionxform = str
-    c.read(path)
+    try:
+        c.read(path)
+    except configparser.MissingSectionHeaderError:
+        # Tolerate bare preamble lines (e.g. an "include =" directive
+        # before the first section header, as dvs-generated inis have).
+        c.read_string("[__preamble__]\n" + open(path).read())
     return c
 
 main = load(os.environ["MAIN_GW"])
