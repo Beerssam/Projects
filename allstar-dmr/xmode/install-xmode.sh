@@ -179,9 +179,12 @@ done
 $SYSTEMCTL daemon-reload
 $SYSTEMCTL enable usrp-agc@main 2>/dev/null || true
 
-say "Starting the main AGC shim, then restarting the main Analog_Bridge onto it"
-$SYSTEMCTL start usrp-agc@main
+say "Restarting the main Analog_Bridge onto its new ports, then starting the main AGC shim"
+# Order matters: the shim binds the ports Analog_Bridge just vacated
+# (34001); starting it first collides with the still-running bridge
+# (found on the first live install, Nov 13 2026).
 $SYSTEMCTL restart analog_bridge
+$SYSTEMCTL start usrp-agc@main
 
 say "Liveness"
 FAIL=0
