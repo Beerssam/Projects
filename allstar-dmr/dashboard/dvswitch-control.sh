@@ -1175,7 +1175,7 @@ PYEOF
 do_reflectors() {
   # ?mode=ysf|p25|nxdn|dstar|m17 -> JSON list from the node's host files,
   # falling back to the DVRef API (cached 24h in /tmp) if not found locally.
-  local mode f line id name count=0 first=1
+  local mode f line id name count=0 first=1 extra_files=""
   mode=$(get_param mode | tr 'A-Z' 'a-z')
   case "$mode" in
     ysf)   f=$(find_hostfile "ysf"   "YSFHosts.txt")
@@ -1186,8 +1186,19 @@ do_reflectors() {
     nxdn)  f=$(find_hostfile "nxdn"  "NXDNHosts.txt" "NXDN_Hosts.txt") ;;
     m17)   f=$(find_hostfile "m17"   "M17Hosts.txt" "M17_Hosts.txt") ;;
     dstar)
-      # D-STAR has three host files; DPlus (REF) is the primary list
-      f=$(find_hostfile "dplus" "DPlus_Hosts.txt" "DExtra_Hosts.txt" "DCS_Hosts.txt")
+      # D-STAR has three host files (DPlus=REF, DExtra=XRF, DCS=DCS).
+      # All three are merged (first file wins on a duplicate id) so the
+      # dropdown is the complete list, not REF only.
+      local d1 d2 d3
+      d1=$(find_hostfile "dplus" "DPlus_Hosts.txt")
+      d2=$(find_hostfile "dextra" "DExtra_Hosts.txt")
+      d3=$(find_hostfile "dcs" "DCS_Hosts.txt")
+      f=""; extra_files=""
+      for cand in "$d1" "$d2" "$d3"; do
+        [[ -n "$cand" ]] || continue
+        if [[ -z "$f" ]]; then f="$cand";
+        elif [[ "$cand" != "$f" ]]; then extra_files="${extra_files:+$extra_files:}$cand"; fi
+      done
       ;;
     *) printf '{"ok":false,"error":"Invalid mode"}'; return ;;
   esac
@@ -1228,64 +1239,75 @@ do_reflectors() {
   #   D-STAR host files: "REF001C  address" (label is the designator)
   #   FCSRooms.txt: "FCS00155;Name;..." or "FCS00155 Name"; a bare
   #     number gets the FCS prefix.
-  python3 - "$mode" "$f" "$fcs_file" <<'PYEOF'
+  python3 - "$mode" "$f" "$fcs_file" "$extra_files" <<'PYEOF'
 import json, sys
 mode, main_path, fcs_path = sys.argv[1], sys.argv[2], sys.argv[3]
+extra_paths = [p for p in (sys.argv[4].split(":") if len(sys.argv) > 4 else []) if p]
+# Full lists: the old 300-entry cap existed only because the previous
+# per-line shell parser was slow; a reflector past the cap could never
+# be found by the dashboard search (Sam, Nov 13 2026). Files this size
+# parse in milliseconds, so the caps are now just sanity bounds.
+MAIN_CAP = 5000
+TOTAL_CAP = 6000
 out = []
 if mode == "ysf":
     # The Echo/parrot is a gateway service, not a normal list entry.
-    # Pin it first so the cap cannot hide it; the loop skips any real
-    # 99999 line to avoid a duplicate.
+    # Pin it first; the parse skips any real 99999 line (no duplicate).
     out.append({"id": "99999", "name": "Echo (YSF Parrot)"})
 
 def ws_fields(line):
     parts = line.split()
     return (parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
 
-try:
-    with open(main_path, errors="replace") as fh:
+def parse(path, kind):
+    entries = []
+    try:
+        fh = open(path, errors="replace")
+    except OSError:
+        return entries
+    with fh:
         for line in fh:
-            if len(out) >= 300:
-                break
             if line.startswith("#") or not line.strip():
                 continue
-            if mode == "ysf":
+            if kind == "ysf":
                 f = line.split(";")
                 rid = f[0].strip()
                 name = f[1].strip() if len(f) > 1 else ""
                 if rid == "99999":
                     continue
-            elif mode in ("p25", "nxdn"):
-                rid, name = ws_fields(line)
-            else:
-                rid, name = ws_fields(line)[0], ""
-            if not rid:
-                continue
-            out.append({"id": rid, "name": name or rid})
-except OSError:
-    pass
-
-if mode == "ysf" and fcs_path:
-    try:
-        with open(fcs_path, errors="replace") as fh:
-            for line in fh:
-                if len(out) >= 400:
-                    break
-                if line.startswith("#") or not line.strip():
-                    continue
+            elif kind == "fcs":
                 if ";" in line:
                     f = line.split(";")
                     rid = f[0].strip()
                     name = f[1].strip() if len(f) > 1 else ""
                 else:
                     rid, name = ws_fields(line)
-                if not rid:
-                    continue
-                if not rid.startswith("FCS"):
+                if rid and not rid.startswith("FCS"):
                     rid = "FCS" + rid
-                out.append({"id": rid, "name": name or rid})
-    except OSError:
-        pass
+            elif kind == "wsname":
+                rid, name = ws_fields(line)
+            else:  # "ws": label is the designator itself (D-STAR)
+                rid, name = ws_fields(line)[0], ""
+            if rid:
+                entries.append({"id": rid, "name": name or rid})
+    return entries
+
+if mode == "ysf":
+    out += parse(main_path, "ysf")[:MAIN_CAP - len(out)]
+    if fcs_path:
+        out += parse(fcs_path, "fcs")[:TOTAL_CAP - len(out)]
+elif mode in ("p25", "nxdn"):
+    out = parse(main_path, "wsname")[:MAIN_CAP]
+elif mode == "dstar":
+    seen = set()
+    for path in [main_path] + extra_paths:
+        for e in parse(path, "ws"):
+            if e["id"] not in seen:
+                seen.add(e["id"])
+                out.append(e)
+    out = out[:MAIN_CAP]
+else:
+    out = parse(main_path, "wsname")[:MAIN_CAP]
 
 print(json.dumps({"ok": True, "reflectors": out}))
 PYEOF

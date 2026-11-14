@@ -261,8 +261,14 @@
   <div id="xmode-body">
     <div class="status-row"><span class="label">Bridge</span><span id="xm-bridge-state">...</span></div>
     <div style="display:flex; gap:8px; margin-bottom:8px;">
-      <select id="xm-side-a" style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
-      <select id="xm-side-b" style="flex:1; min-width:0; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:4px;">Side A</div>
+        <select id="xm-side-a" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+      </div>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:4px;">Side B</div>
+        <select id="xm-side-b" style="width:100%; padding:12px; border-radius:10px; border:1px solid #334155; background:#0f172a; color:#e2e8f0; font-size:1em;"></select>
+      </div>
     </div>
     <div style="display:flex; gap:8px; margin-bottom:6px;">
       <button class="preset-btn" id="xm-bridge-start" style="flex:1; text-align:center;"><span class="alias">Start bridge</span></button>
@@ -270,25 +276,14 @@
       <button class="preset-btn" id="xm-bridge-shim" style="flex:1; text-align:center;"><span class="alias">Bridge AGC: ...</span></button>
     </div>
     <div style="font-size:0.8em; color:#64748b; margin-bottom:12px;">
-      Digital-to-digital only: the two legs cross-connect inside DVSwitch —
-      nothing goes through your analog node, and no node numbers are
-      involved. One bridge at a time; the leg stacks run only while a
-      bridge is up. Bridge AGC levels both directions through the
-      usrp-agc shim; bypass = raw audio.
+      Digital-to-digital only — nothing passes through your analog node.
+      Tune the two sides below, then start the bridge. One bridge at a time.
     </div>
     <div id="xm-legs"></div>
-    <div style="border-top:1px solid #1e293b; margin-top:14px; padding-top:12px;">
-      <div class="status-row"><span class="label">Main node audio · auto-level</span><span id="xm-main-agc-state">...</span></div>
-      <div style="display:flex; gap:8px;">
-        <button class="preset-btn" id="xm-main-abagc" style="flex:1; text-align:center;"><span class="alias">Digital &#8594; radio AGC</span></button>
-        <button class="preset-btn" id="xm-main-shim" style="flex:1; text-align:center;"><span class="alias">Radio &#8594; digital AGC</span></button>
-      </div>
-      <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
-        Radio &#8594; digital runs through the usrp-agc shim (the direction
-        Analog_Bridge has no AGC for). Turning it off = bypass, raw audio.
-        The Audio Levels sliders below always stay available as manual control.
-      </div>
-    </div>
+    <details style="border-top:1px solid #1e293b; margin-top:14px; padding-top:10px;">
+      <summary style="cursor:pointer; color:#94a3b8; font-size:0.9em;">Advanced — per-leg audio (AGC + gains)</summary>
+      <div id="xm-adv-legs"></div>
+    </details>
     <div style="font-size:0.85em; color:#94a3b8; margin-top:10px;" id="xm-msg"></div>
     <div style="font-size:0.8em; color:#64748b; margin-top:6px;">
       Tune each leg to one of your own TGs/reflectors first, then start the
@@ -340,6 +335,18 @@
            style="width: 100%;" oninput="updateGainLabel('usrp')"
            onchange="setGain('usrp', this.value)">
     <div style="font-size: 0.75em; color: #64748b; margin-top: 2px;">Digital → your radio. Raise if digital sounds quiet.</div>
+  </div>
+  <div id="main-agc-block" style="border-top: 1px solid #1e293b; margin-top: 14px; padding-top: 12px;">
+    <div class="status-row"><span class="label">Auto-Level</span><span id="xm-main-agc-state">...</span></div>
+    <div style="display: flex; gap: 8px;">
+      <button class="preset-btn" id="xm-main-shim" style="flex:1; text-align:center;"><span class="alias">Your voice &#8594; digital: ...</span></button>
+      <button class="preset-btn" id="xm-main-abagc" style="flex:1; text-align:center;"><span class="alias">Digital &#8594; your radio: ...</span></button>
+    </div>
+    <div style="font-size: 0.75em; color: #64748b; margin-top: 6px;">
+      Auto-level keeps levels even on their own; the sliders above stay
+      manual either way. Your voice &#8594; digital runs through the
+      usrp-agc shim; turning it off gives raw audio, never a dead path.
+    </div>
   </div>
 </div>
 
@@ -1236,14 +1243,22 @@ function buildBridge() {
     } else {
       agc = `<div style="font-size:0.8em; color:#64748b; margin-top:8px;">M17 leg levels are fixed in the bridge (USRP2M17 gain offsets) — no AGC on this leg.</div>`;
     }
+    div.id = "xm-leg-" + leg;
     div.innerHTML = `
       <div class="status-row"><span class="label">${label} Leg</span><span id="xm-${leg}-state">...</span></div>
       ${dest}
       <div style="display:flex; gap:8px;">
         <button class="preset-btn" id="xm-${leg}-tune" style="flex:1; text-align:center;"><span class="alias">Tune leg</span></button>
-      </div>
-      ${agc}`;
+      </div>`;
     wrap.appendChild(div);
+    // Per-leg audio (AGC toggle + gain sliders) lives in the card's
+    // single collapsed Advanced section, not stacked in the main flow.
+    const adiv = document.createElement("div");
+    adiv.style.borderTop = "1px solid #1e293b";
+    adiv.style.marginTop = "12px";
+    adiv.style.paddingTop = "10px";
+    adiv.innerHTML = `<div style="font-size:0.85em; color:#94a3b8;">${label} leg audio</div>${agc}`;
+    document.getElementById("xm-adv-legs").appendChild(adiv);
   });
 
   // Bridge side selects (options refreshed with destinations on poll)
@@ -1256,6 +1271,10 @@ function buildBridge() {
   });
   document.getElementById("xm-side-a").value = "dmr";
   document.getElementById("xm-side-b").value = "ysf";
+  ["xm-side-a", "xm-side-b"].forEach(id => {
+    document.getElementById(id).addEventListener("change", xmSyncLegVisibility);
+  });
+  xmSyncLegVisibility();
 
   // M17 module options A-Z
   const modSel = document.getElementById("xm-m17-module");
@@ -1432,9 +1451,21 @@ function xmAgcLabels(prefix, st) {
   const ab = document.getElementById(prefix + "-abagc");
   const sh = document.getElementById(prefix + "-shim");
   if (ab) ab.querySelector(".alias").textContent =
-    (prefix === "xm-main" ? "Digital → radio AGC: " : "Net → bridge AGC: ") + (st.ab_agc === "1" ? "ON" : "OFF");
+    (prefix === "xm-main" ? "Digital → your radio: " : "Net → bridge AGC: ") + (st.ab_agc === "1" ? "ON" : "OFF");
   if (sh) sh.querySelector(".alias").textContent =
-    "Radio → digital AGC: " + (st.shim === "bypass" ? "BYPASSED" : "ON");
+    (prefix === "xm-main" ? "Your voice → digital: " : "Radio → digital AGC: ") + (st.shim === "bypass" ? "BYPASSED" : "ON");
+}
+
+function xmSyncLegVisibility() {
+  // Only the two legs picked as bridge sides show their destination
+  // controls; the other legs stay out of the way (their destinations
+  // still show inside the side pickers themselves).
+  const a = document.getElementById("xm-side-a").value;
+  const b = document.getElementById("xm-side-b").value;
+  XM_LEGS.forEach(({ leg }) => {
+    const el = document.getElementById("xm-leg-" + leg);
+    if (el) el.style.display = (leg === a || leg === b) ? "" : "none";
+  });
 }
 
 function xmSideLabel(legKey) {
@@ -1447,13 +1478,16 @@ function renderBridge(r) {
   xmState = r;
   const absent = document.getElementById("xmode-absent");
   const body = document.getElementById("xmode-body");
+  const mab = document.getElementById("main-agc-block");
   if (r.installed === false) {
     absent.classList.remove("hidden");
     body.classList.add("hidden");
+    if (mab) mab.style.display = "none";
     return;
   }
   absent.classList.add("hidden");
   body.classList.remove("hidden");
+  if (mab) mab.style.display = "";
   const br = r.bridge || {};
   document.getElementById("xm-bridge-state").textContent =
     br.active === "1"
@@ -1495,9 +1529,10 @@ function renderBridge(r) {
   if (r.main) {
     xmAgcLabels("xm-main", r.main);
     document.getElementById("xm-main-agc-state").textContent =
-      "AB AGC " + (r.main.ab_agc === "1" ? "on" : "off") + " · shim " +
-      (r.main.shim === "bypass" ? "bypassed" : "on");
+      "Voice \u2192 digital " + (r.main.shim === "bypass" ? "OFF" : "ON") +
+      " \u00b7 digital \u2192 radio " + (r.main.ab_agc === "1" ? "ON" : "OFF");
   }
+  xmSyncLegVisibility();
 }
 
 function refreshBridge() {
