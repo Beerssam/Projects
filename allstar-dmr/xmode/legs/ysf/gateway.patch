@@ -1,7 +1,13 @@
 # YSFGateway leg clone patch (see GATEWAY-PATCHES.md). R=required O=optional E=ensure
-R|General|RptPort|4200|4300
+# Expected values are from the node's LIVE YSFGateway.ini (Nov 13 2026).
+# Pairing rule (proven by the working main YSF chain):
+#   gateway RptPort   == leg MMDVM_Bridge [System Fusion Network] LocalPort
+#   gateway LocalPort == leg MMDVM_Bridge [System Fusion Network] GatewayPort
+R|General|RptPort|3200|3300
+R|General|LocalPort|4200|4300
 R|Log|FilePath|*|/var/log/mmdvm
 R|Log|FileRoot|*|YSFGateway-XYSF
+R|YSF Network|Port|42000|42400
+R|FCS Network|Port|42001|42401
 O|Remote Commands|Port|6073|6173
-O|Network|Port|42001|42021
 E|Network|Startup|

@@ -1,7 +1,13 @@
 # NXDNGateway leg clone patch (see GATEWAY-PATCHES.md). R=required O=optional E=ensure
-R|General|RptPort|14021|33021
+# Expected values are from the node's LIVE NXDNGateway.ini (Nov 13 2026).
+# Pairing rule: gateway RptPort == leg MB [NXDN Network] LocalPort (33022);
+# gateway LocalPort == leg MB [NXDN Network] GatewayPort (33021). The
+# commented-out Kenwood/Icom RptPort lines in the live ini are comments
+# and must stay untouched (the patcher is section-scoped and skips them).
+R|General|RptPort|14021|33022
+R|General|LocalPort|14020|33021
 R|Log|FilePath|*|/var/log/mmdvm
 R|Log|FileRoot|*|NXDNGateway-XNXDN
+R|Network|Port|14050|14051
 O|Remote Commands|Port|6075|6175
-O|Network|Port|14050|14051
 E|Network|Startup|

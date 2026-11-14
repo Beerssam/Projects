@@ -112,11 +112,16 @@ sends to the legs' home ports. M17 leg network LocalPort 32013
 
 Leg TLV (AB <-> MB): DMR 31200/31203, YSF 35200/35203,
 P25 32250/32253, NXDN 33200/33203.
-Leg MB network locals: YSF 3300/4300 (leg YSFGateway RptPort 4300),
-P25 33010/33011 (leg P25Gateway RptPort 33010), NXDN 33022/33021
-(leg NXDNGateway RptPort 33021). Gateway instances are cloned from
-the node's working gateway inis at install time (see
-legs/GATEWAY-PATCHES.md). Leg DMRGateway: MMDVM leg 62131/62132.
+Leg MB <-> gateway pairing (exact, per the working main YSF chain:
+gateway RptPort = MB LocalPort, gateway LocalPort = MB GatewayPort):
+YSF — MB Local 3300 / Gateway 4300, gateway network binds moved to
+42400 (YSF) / 42401 (FCS); P25 — MB Gateway 33010 / Local 33011,
+gateway network bind 42410; NXDN — MB Gateway 33021 / Local 33022,
+gateway network bind 14051. Gateway instances are cloned from the
+node's LIVE gateway inis at install time, with patch expectations
+taken from those live files (see legs/GATEWAY-PATCHES.md — the
+stock values differ, and the stock main chain itself pairs P25 /
+NXDN off by one). Leg DMRGateway: MMDVM leg 62131/62132.
 
 Main-chain shim: Asterisk keeps its side (sends to 34001, listens
 on 32001 — the rpt.conf USRP convention is send:listen). The shim
