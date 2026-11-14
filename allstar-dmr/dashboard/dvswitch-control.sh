@@ -1214,74 +1214,81 @@ do_reflectors() {
   if [[ -z "$f" ]]; then
     f="/dev/null"
   fi
-  printf '{"ok":true,"reflectors":['
-  if [[ "$mode" == "ysf" ]]; then
-    # The Echo/parrot is a gateway service, not a normal reflector-list
-    # entry. Pin it first so the 300-entry cap (or a missing host-file
-    # line) cannot hide it; the YSF loop below skips any real 99999 line
-    # to avoid a duplicate.
-    printf '{"id":"99999","name":"Echo (YSF Parrot)"}'
-    first=0
-    count=$((count+1))
-  fi
-  # Per-mode data-line formats (verified against the live Pi-Star/dvref files):
-  #   YSFHosts.txt : "designator;name;description;host;port;000;" (semicolons)
-  #   P25Hosts.txt / NXDNHosts.txt : "designator<TAB>host<TAB>port" (Pi-Star
-  #     header literally says "# Format: designator<TAB>host<TAB>port"; there
-  #     is NO name column, so the host is shown as the label). The old code
-  #     parsed these as semicolon-separated, which stuffed literal TABs into
-  #     the JSON ids -> invalid JSON -> the page silently fell back to the
-  #     short hardcoded list.
-  #   D-STAR host files : "REF001C  address" (whitespace separated)
-  while IFS= read -r line && [[ $count -lt 300 ]]; do
-    [[ "$line" =~ ^#.*$ ]] && continue
-    [[ -z "${line//[[:space:]]/}" ]] && continue
-    case "$mode" in
-      ysf)
-        id=$(printf '%s' "$line" | cut -d';' -f1 | sed 's/^ *//;s/ *$//')
-        name=$(printf '%s' "$line" | cut -d';' -f2 | sed 's/^ *//;s/ *$//')
-        ;;
-      p25|nxdn)
-        id=$(printf '%s' "$line" | awk '{print $1}')
-        name=$(printf '%s' "$line" | awk '{print $2}')
-        ;;
-      *)
-        id=$(printf '%s' "$line" | awk '{print $1}')
-        name="$id"
-        ;;
-    esac
-    [[ -z "$id" ]] && continue
-    if [[ "$mode" == "ysf" && "$id" == "99999" ]]; then continue; fi
-    [[ -z "$name" ]] && name="$id"
-    if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
-    printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
-    count=$((count+1))
-  done < "$f"
-  # Append FCS rooms for YSF mode (separate file, e.g. FCS00155)
-  if [[ -n "$fcs_file" && -r "$fcs_file" ]]; then
-    while IFS= read -r line && [[ $count -lt 400 ]]; do
-      [[ "$line" =~ ^#.*$ ]] && continue
-      [[ -z "${line//[[:space:]]/}" ]] && continue
-      # FCSRooms.txt: try "FCS00155;Name;..." or "FCS00155 Name" formats
-      if [[ "$line" == *";"* ]]; then
-        id=$(printf '%s' "$line" | cut -d';' -f1 | sed 's/^ *//;s/ *$//')
-        name=$(printf '%s' "$line" | cut -d';' -f2 | sed 's/^ *//;s/ *$//')
-      else
-        id=$(printf '%s' "$line" | awk '{print $1}')
-        name=$(printf '%s' "$line" | awk '{print $2}')
-      fi
-      [[ -z "$id" ]] && continue
-      [[ -z "$name" ]] && name="$id"
-      # Prefix with FCS if not already (some files list just the number)
-      if ! [[ "$id" =~ ^FCS ]]; then
-        id="FCS${id}"
-      fi
-      if [[ $first -eq 1 ]]; then first=0; else printf ','; fi
-      printf '{"id":"%s","name":"%s"}' "$(json_escape "$id")" "$(json_escape "$name")"
-      count=$((count+1))
-    done < "$fcs_file"
-  fi
-  printf ']}'
+  # Single-pass parse in python3. The previous implementation spawned
+  # cut/sed/awk processes for EVERY line of the host files (~3,000 forks
+  # for the YSF list), which took 3-6s even on a fast machine and far
+  # past the dashboard page's 10s fetch timeout on the node's Pi 3B+ --
+  # so the lists silently fell back to the short hardcoded ones (Sam's
+  # Nov 13 2026 "lists don't load / are incomplete" report). Same
+  # files, formats, caps and Echo pinning; the parse is milliseconds.
+  # Per-mode formats (verified against the live Pi-Star/dvref files):
+  #   YSFHosts.txt: "designator;name;description;host;port;000;"
+  #   P25Hosts.txt / NXDNHosts.txt: "designator<TAB>host<TAB>port"
+  #     (no name column; the host is shown as the label)
+  #   D-STAR host files: "REF001C  address" (label is the designator)
+  #   FCSRooms.txt: "FCS00155;Name;..." or "FCS00155 Name"; a bare
+  #     number gets the FCS prefix.
+  python3 - "$mode" "$f" "$fcs_file" <<'PYEOF'
+import json, sys
+mode, main_path, fcs_path = sys.argv[1], sys.argv[2], sys.argv[3]
+out = []
+if mode == "ysf":
+    # The Echo/parrot is a gateway service, not a normal list entry.
+    # Pin it first so the cap cannot hide it; the loop skips any real
+    # 99999 line to avoid a duplicate.
+    out.append({"id": "99999", "name": "Echo (YSF Parrot)"})
+
+def ws_fields(line):
+    parts = line.split()
+    return (parts[0] if parts else "", parts[1] if len(parts) > 1 else "")
+
+try:
+    with open(main_path, errors="replace") as fh:
+        for line in fh:
+            if len(out) >= 300:
+                break
+            if line.startswith("#") or not line.strip():
+                continue
+            if mode == "ysf":
+                f = line.split(";")
+                rid = f[0].strip()
+                name = f[1].strip() if len(f) > 1 else ""
+                if rid == "99999":
+                    continue
+            elif mode in ("p25", "nxdn"):
+                rid, name = ws_fields(line)
+            else:
+                rid, name = ws_fields(line)[0], ""
+            if not rid:
+                continue
+            out.append({"id": rid, "name": name or rid})
+except OSError:
+    pass
+
+if mode == "ysf" and fcs_path:
+    try:
+        with open(fcs_path, errors="replace") as fh:
+            for line in fh:
+                if len(out) >= 400:
+                    break
+                if line.startswith("#") or not line.strip():
+                    continue
+                if ";" in line:
+                    f = line.split(";")
+                    rid = f[0].strip()
+                    name = f[1].strip() if len(f) > 1 else ""
+                else:
+                    rid, name = ws_fields(line)
+                if not rid:
+                    continue
+                if not rid.startswith("FCS"):
+                    rid = "FCS" + rid
+                out.append({"id": rid, "name": name or rid})
+    except OSError:
+        pass
+
+print(json.dumps({"ok": True, "reflectors": out}))
+PYEOF
 }
 
 do_talkgroups() {
