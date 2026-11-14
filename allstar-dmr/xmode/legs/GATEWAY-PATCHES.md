@@ -23,7 +23,7 @@ Rules for the patcher:
 - REQUIRED [General] RptPort: 4200 -> 4300        (faces leg MMDVM_Bridge)
 - REQUIRED [Log] FilePath -> /var/log/mmdvm ; FileRoot -> YSFGateway-XYSF
 - OPTIONAL [Remote Commands] Port: 6073 -> 6173
-- OPTIONAL [Network] Port: 42001 -> 42011        (if this build binds it)
+- OPTIONAL [Network] Port: 42001 -> 42021        (if this build binds it)
 - [Network] Startup -> (blank default; helper sets the reflector)
 
 ## P25Gateway: /opt/P25Gateway/P25Gateway.ini -> /opt/xmode/legs/p25/P25Gateway.ini

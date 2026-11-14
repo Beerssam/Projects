@@ -3,5 +3,5 @@ R|General|RptPort|4200|4300
 R|Log|FilePath|*|/var/log/mmdvm
 R|Log|FileRoot|*|YSFGateway-XYSF
 O|Remote Commands|Port|6073|6173
-O|Network|Port|42001|42011
+O|Network|Port|42001|42021
 E|Network|Startup|
