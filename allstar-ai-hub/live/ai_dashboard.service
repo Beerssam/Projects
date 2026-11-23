@@ -1,0 +1,14 @@
+[Unit]
+Description=AllStar Link AI Web Dashboard Telemetry Stream
+After=network.target
+
+[Service]
+Type=simple
+User=asl
+WorkingDirectory=/home/asl
+ExecStart=/usr/bin/python3 /home/asl/ai_dashboard.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

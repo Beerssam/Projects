@@ -1,0 +1,18 @@
+[Unit]
+Description=AllStar Link AI Orchestrator Node Assistant
+After=asterisk.service
+Requires=asterisk.service
+
+[Service]
+Type=simple
+User=root
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/home/asl
+ExecStart=/opt/ai_env/bin/python3 /home/asl/ai_orchestrator.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/ai_orchestrator.log
+StandardError=append:/var/log/ai_orchestrator.log
+
+[Install]
+WantedBy=multi-user.target
