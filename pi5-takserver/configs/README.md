@@ -8,11 +8,12 @@ Live host: 192.168.1.199, user `sbeers`. Runs OpenTAK, nginx, Docker (Nextcloud 
 |---|---|
 | `nginx/allstar-hub` | `/etc/nginx/sites-available/allstar-hub` |
 | `nginx/allstar-node` | `/etc/nginx/sites-enabled/allstar-node` |
+| `nginx/huc-location.conf` | `/etc/nginx/huc-location.conf` |
 | `letsencrypt-hooks/opentakserver.sh` | `/etc/letsencrypt/renewal-hooks/deploy/opentakserver.sh` |
 | `letsencrypt-hooks/reload-services.sh` | `/etc/letsencrypt/renewal-hooks/deploy/reload-services.sh` |
 
 - `nginx/allstar-hub` — the 625731 site. Port 80 serves the ACME challenge (Pi5 webroot first, else proxy to the hub) and redirects the rest to HTTPS. Port 443 (Pi5's 625731 cert) proxies `/asl-web-ui/`, `/allscan/`, `/allmon3/` to the hub's HTTPS, `/ai-dashboard/` plus the dashboard's absolute API paths (`/api/*`, `/stream`, `/action/`) to the Flask app on 192.168.1.200:62573, and catch-all `/` to the hub's HTTPS. The API locations were added 2026-11-24 to fix the laptop no-data issue.
-- `nginx/allstar-node` — the 625730 site. Note it lives in `sites-enabled/` (a regular file, not a symlink), not `sites-available/`. It also includes `/etc/nginx/huc-location.conf`, which is **not** in this save (content was not gathered) — grab that file too for a complete restore.
+- `nginx/allstar-node` — the 625730 site. Note it lives in `sites-enabled/` (a regular file, not a symlink), not `sites-available/`. It includes `/etc/nginx/huc-location.conf`, which is saved here as `nginx/huc-location.conf` — it proxies `/huc/` to the 625730 host's 8443 (websocket UI) and rewrites redirects back under `/huc/`.
 - The two hook scripts are certbot deploy hooks: one restarts OpenTAK after a renewal, the other reloads nginx and restarts the EUD handler.
 
 ## Certificates
