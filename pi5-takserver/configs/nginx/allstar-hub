@@ -1,0 +1,132 @@
+# Hub 625731 - clean URL via Pi5 + ACME challenge proxy to hub
+server {
+    listen 80;
+    server_name 625731.nodes.allstarlink.org;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files $uri @hub_acme;
+    }
+    location @hub_acme {
+        proxy_pass http://192.168.1.200:80;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+server {
+    listen 443 ssl;
+    server_name 625731.nodes.allstarlink.org;
+
+    ssl_certificate /etc/letsencrypt/live/625731.nodes.allstarlink.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/625731.nodes.allstarlink.org/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location = /asl-web-ui {
+        return 301 https://$host/asl-web-ui/;
+    }
+    location /asl-web-ui/ {
+        proxy_pass https://192.168.1.200:443/asl-web-ui/;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 86400;
+    }
+
+    location = /allscan {
+        return 301 https://$host/allscan/;
+    }
+    location /allscan/ {
+        proxy_pass https://192.168.1.200:443/allscan/;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 86400;
+    }
+
+    location = /allmon3 {
+        return 301 https://$host/allmon3/;
+    }
+    location /allmon3/ {
+        proxy_pass https://192.168.1.200:443/allmon3/;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 86400;
+    }
+
+    location = /ai-dashboard {
+        return 301 https://$host/ai-dashboard/;
+    }
+    location /ai-dashboard/ {
+        proxy_pass http://192.168.1.200:62573/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 86400;
+    }
+
+
+    # AI dashboard API - the dashboard JS fetches these absolute paths, so they must be proxied to the Flask app too, not just /ai-dashboard/.
+    location ~ ^/api/(connections|aircraft|recent|ai_status|pool|health|solar|trail|route)(/|$) {
+        proxy_pass http://192.168.1.200:62573;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location = /stream {
+        proxy_pass http://192.168.1.200:62573;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400;
+    }
+    location /action/ {
+        proxy_pass http://192.168.1.200:62573;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass https://192.168.1.200:443/;
+        proxy_http_version 1.1;
+        proxy_ssl_verify off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_read_timeout 86400;
+    }
+}
