@@ -49,7 +49,8 @@ def model_ok(path):
         if os.path.getsize(path) < 100_000_000:
             return False
         with open(path, "rb") as f:
-            return f.read(4) == b"ggml"
+            # ggml magic 0x67676d6c is stored little-endian: "lmgg".
+            return f.read(4) in (b"lmgg", b"ggml")
     except Exception:
         return False
 
