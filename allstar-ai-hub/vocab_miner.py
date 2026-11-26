@@ -8,15 +8,19 @@
 # /home/asl/ai_vocab.txt, which stt_script.py reads fresh on every clip
 # as the whisper-cli --prompt. The pinned CORE list always stays.
 #
-# Safety rails: promotion needs repeated identical hearings (one-off
-# Gemini errors never qualify); the auto list is capped by count and
+# Safety rails: promotion needs repeated identical hearings spread
+# over at least 2 distinct days (one-off errors and one-evening
+# bursts never qualify); a hand-kept DENY list prunes known
+# systematic mishearings; near-duplicates collapse to the
+# more-heard form; the auto list is capped by count and
 # total size (Whisper only reads a limited prompt); entries expire out
 # of the rolling window on their own; the file is plain text - inspect
 # or edit it any time. Run nightly from cron; --dry-run prints only.
+import difflib
 import os
 import re
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 
 LOG = "/var/log/ai_orchestrator.log"
@@ -30,13 +34,20 @@ CORE = "KF0RIZ amateur radio hub, Shawnee, Kansas. Price Chopper, Walmart Superc
 CORE_WORDS = set(re.findall(r"[a-z0-9]+", CORE.lower()))
 
 # Capitalized often but useless as vocabulary (Whisper knows them).
+# "i" lives here, not in COMMON: the pronoun is capitalized EVERYWHERE,
+# not just at sentence starts, and the seed run promoted it.
 STOP = {
     "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
     "sunday", "january", "february", "march", "april", "may", "june",
     "july", "august", "september", "october", "november", "december",
     "today", "tomorrow", "yesterday", "please", "thanks", "thank",
-    "yes", "no", "okay", "well", "google",
+    "yes", "no", "okay", "well", "google", "i", "i'm",
 }
+# Known systematic Gemini mishearings, hand-pruned (Nov 25 seed run
+# promoted 'Retaw Missouri' - Gemini's repeated mishearing of Raytown).
+# A denylisted key, or any phrase containing a denylisted word, never
+# promotes. Add lines here when a bad promotion is spotted.
+DENY = {"retaw", "retaw missouri"}
 # Words that are only capitalized because they start a sentence.
 COMMON = STOP | {
     "the", "a", "an", "can", "could", "what", "when", "where", "who",
@@ -107,6 +118,7 @@ def main():
     dry = "--dry-run" in sys.argv
     cutoff = date.today() - timedelta(days=WINDOW_DAYS)
     counts = Counter()
+    days = defaultdict(set)
     surfaces = {}
     try:
         with open(LOG, errors="ignore") as f:
@@ -127,16 +139,31 @@ def main():
         for ph in phrases_from(m.group(4)):
             key = ph.lower()
             counts[key] += 1
+            days[key].add(d)
             surfaces.setdefault(key, Counter())[ph] += 1
 
+    # Promotion needs: >= THRESHOLD hearings spread over >= 2 distinct
+    # days (a one-evening burst - including a systematic mishearing
+    # repeated all night - is not "a word Sam commonly uses"), not
+    # denylisted, and not already pinned in CORE.
     promoted = []  # (surface, count)
     for key, n in counts.most_common():
-        if n < THRESHOLD:
+        if n < THRESHOLD or len(days[key]) < 2:
+            continue
+        if key in DENY or any(w in DENY for w in key.split()):
             continue
         if all(w in CORE_WORDS for w in key.split()):
             continue  # already pinned in CORE
         promoted.append((surfaces[key].most_common(1)[0][0], n))
-    promoted = promoted[:MAX_AUTO]
+    # Near-duplicate suppression: when two survivors are almost the
+    # same phrase, keep the more-heard one (counts are sorted desc).
+    kept = []
+    for surface, n in promoted:
+        if any(difflib.SequenceMatcher(None, surface.lower(), k.lower()).ratio() >= 0.85
+               for k, _ in kept):
+            continue
+        kept.append((surface, n))
+    promoted = kept[:MAX_AUTO]
 
     def compose(items):
         if not items:
