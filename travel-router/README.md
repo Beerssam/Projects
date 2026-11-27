@@ -63,6 +63,10 @@ broke three separate things in one day (below).
   idempotent, verifies by read-back.
 - `glrouter.sh` — reference copy of the Pi5-side acme.sh deploy hook
   (lives at `~/.acme.sh/deploy/glrouter.sh` on the Pi5). No secrets.
+- `patch_agh_lists.sh` — the AdGuard blocklist upgrade (Nov 26, 2026):
+  enables the stock AdAway list and adds OISD Big + HaGeZi Multi PRO
+  (471k extra rules total). Idempotent; backs up the AGH config
+  first. Re-run after any reset that wipes /etc/AdGuardHome.
 
 ## Recovery sequence after a firmware update / reset
 
@@ -75,7 +79,9 @@ broke three separate things in one day (below).
    `~/.acme.sh/acme.sh --deploy -d beerswifi.duckdns.org --deploy-hook glrouter`
 4. On the Pi5, remove `beerswifi` from `~/duckdns/duck.sh` again if a
    Pi5 restore ever brought back the old domains list.
-5. Verify (below).
+5. On the router: `sh patch_agh_lists.sh` to restore the upgraded
+   AdGuard blocklists (a reset wipes /etc/AdGuardHome).
+6. Verify (below).
 
 ## Verification
 
