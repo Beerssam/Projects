@@ -254,6 +254,11 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
     <div class="lbl">RADIO &middot; ${RADIO_MODE}</div>
     <div style="font-size:15px;margin-top:4px;">${RADIO_TXT}</div>${RADIO_SUB}
   </div>${GW_STRIP}
+  <div style="border-top:1px solid #1e293b;margin-top:10px;padding-top:12px;display:flex;gap:10px;">
+    <a id="wpsd-link" href="#" style="flex:1;text-align:center;padding:9px 0;border:1px solid #334155;border-radius:999px;color:#e2e8f0;text-decoration:none;font-size:13px;">WPSD Dashboard</a>
+    <a href="https://beerspi3.duckdns.org/status/beerspi3" style="flex:1;text-align:center;padding:9px 0;border:1px solid #334155;border-radius:999px;color:#e2e8f0;text-decoration:none;font-size:13px;">Fleet Status</a>
+  </div>
+  <script>document.getElementById('wpsd-link').href = location.protocol + '//' + location.hostname + '/';</script>
   <div class="grid">
     <div class="cell"><div class="k">WI-FI SIGNAL</div><div class="v">${RSSI_TXT}</div><div class="unit">${SSID}</div></div>
     <div class="cell"><div class="k">LATENCY</div><div class="v">${LAT_TXT}</div></div>
