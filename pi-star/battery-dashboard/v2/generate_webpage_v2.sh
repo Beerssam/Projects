@@ -129,7 +129,8 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
 <style>
   body { background:#0b1220; color:#e2e8f0; font-family:ui-monospace,Menlo,Consolas,monospace; margin:0; padding:18px; }
   .card { background:#0f172a; border:1px solid #1e293b; border-radius:10px; max-width:560px; margin:0 auto; padding:22px 22px 16px; }
-  .hd { display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px solid #1e293b; padding-bottom:12px; }
+  .hd { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; padding-bottom:12px; }
+  .hd-r { display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
   .title { font-size:19px; font-weight:700; letter-spacing:2.5px; color:#f1f5f9; }
   .sub { font-size:11px; letter-spacing:1.5px; color:#64748b; margin-top:3px; }
   .pill { font-size:11px; letter-spacing:1px; border:1px solid; border-radius:999px; padding:3px 10px; }
@@ -148,13 +149,25 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
   .ips { border-top:1px solid #1e293b; margin-top:6px; padding-top:12px; font-size:12px; line-height:2; }
   .ips .k { display:inline-block; width:92px; color:#64748b; letter-spacing:1px; }
   .ft { border-top:1px solid #1e293b; margin-top:12px; padding-top:12px; font-size:11px; color:#64748b; line-height:1.7; }
+  @media (min-width: 700px) { .card { max-width:680px; } }
+  @media (min-width: 1000px) {
+    body { padding:36px; }
+    .card { max-width:920px; padding:34px 38px 24px; }
+    .title { font-size:27px; } .sub { font-size:13px; }
+    .lbl { font-size:13px; }
+    .big { font-size:88px; } .big .pc { font-size:40px; }
+    .gauge { height:14px; } .trend { height:38px; }
+    .grid { grid-template-columns:1fr 1fr 1fr; }
+    .cell .k { font-size:12px; } .cell .v { font-size:29px; }
+    .ips { font-size:14px; } .ft { font-size:12px; }
+  }
 </style>
 </head>
 <body>
 <div class="card">
   <div class="hd">
     <div><div class="title">HOTSPOT COMMAND</div><div class="sub">KF0RIZ &middot; MOBILE WPSD</div></div>
-    <div><span class="pill" style="color:${PILL_COLOR};border-color:${PILL_COLOR}">&#9679; ${STATE}</span><div class="sync">SYNC ${SYNC_TIME}</div></div>
+    <div class="hd-r"><span class="pill" style="color:${PILL_COLOR};border-color:${PILL_COLOR}">&#9679; ${STATE}</span><div class="sync">SYNC ${SYNC_TIME}</div></div>
   </div>
   <div style="padding:16px 0 6px;">
     <div style="display:flex;justify-content:space-between;align-items:baseline;">
