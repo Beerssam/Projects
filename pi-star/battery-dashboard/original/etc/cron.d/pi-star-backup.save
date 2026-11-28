@@ -1,0 +1,2 @@
+*/15 * * * * pi-star nice -n 19 /home/pi-star/UPS_HAT_E/generate_webpage.sh
+15 4 * * * pi-star /home/pi-star/run_backup.sh >> /home/pi-star/UPS_HAT_E/backup.log
