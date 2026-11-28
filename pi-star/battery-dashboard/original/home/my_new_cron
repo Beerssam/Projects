@@ -1,0 +1,2 @@
+* * * * * /home/pi-star/UPS_HAT_E/generate_webpage.sh >/dev/null 2>&1
+0 3 * * * /usr/local/bin/rclone copy /home/pi-star/UPS_HAT_E/generate_webpage.sh my-google-drive:Pi_backups && /usr/local/bin/rclone delete --min-age 12m --exclude "README.txt" my-google-drive:Pi_backups
