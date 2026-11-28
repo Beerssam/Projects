@@ -1,0 +1,8 @@
+# Run from 04:15 to 04:45
+15,30,45 4 * * * pi-star sudo mount -o remount,rw / && nice -n 19 /home/pi-star/UPS_HAT_E/generate_webpage.sh ; sudo mount -o remount,ro /
+
+# Run every 15 minutes from 05:00 to 23:45
+*/15 5-23 * * * pi-star sudo mount -o remount,rw / && nice -n 19 /home/pi-star/UPS_HAT_E/generate_webpage.sh ; sudo mount -o remount,ro /
+
+# Run from 00:00 to 00:30 (and the 00:45 run)
+0,15,30,45 0 * * * pi-star sudo mount -o remount,rw / && nice -n 19 /home/pi-star/UPS_HAT_E/generate_webpage.sh ; sudo mount -o remount,ro /
