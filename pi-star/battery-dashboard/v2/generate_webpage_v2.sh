@@ -114,6 +114,40 @@ if systemctl is-active --quiet mmdvmhost 2>/dev/null; then SVC_TXT="<span style=
 DISK_PCT=$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')
 SYNC_TIME=$(date +"%H:%M")
 
+# --- radio state: last heard from today's MMDVM log ------------------------------
+RADIO_MODE="--"; RADIO_TXT="No activity logged"
+MLOG=$(ls -t /var/log/pi-star/MMDVM-*.log 2>/dev/null | head -1)
+if [ -n "$MLOG" ]; then
+    LH=$(grep -E 'received (RF|network)' "$MLOG" 2>/dev/null | tail -1)
+    if [ -n "$LH" ]; then
+        RADIO_MODE=$(echo "$LH" | grep -oE '(DMR|YSF|P25|NXDN|D-Star|M17)' | head -1)
+        LCALL=$(echo "$LH" | sed -n 's/.*from \([A-Za-z0-9\/]*\).*/\1/p')
+        LTGT=$(echo "$LH" | sed -n 's/.* to \([^,]*\).*/\1/p')
+        LTIME=$(echo "$LH" | grep -oE '[0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 | cut -d: -f1,2)
+        [ -n "$LCALL" ] && RADIO_TXT="${LCALL} &rarr; ${LTGT} &middot; ${LTIME} UTC"
+        [ -z "$RADIO_MODE" ] && RADIO_MODE="--"
+    fi
+fi
+
+# --- power health (Pi's own throttle/under-voltage flags) + uptime ----------------
+THR=$(vcgencmd get_throttled 2>/dev/null | grep -oE '0x[0-9a-fA-F]+')
+if [ -n "$THR" ]; then
+    THR_DEC=$((THR))
+    if [ $((THR_DEC & 1)) -ne 0 ] || [ $((THR_DEC & 4)) -ne 0 ]; then SUPPLY_TXT="<span style='color:#ef4444'>Under-voltage now</span>"
+    elif [ "$THR_DEC" -ne 0 ]; then SUPPLY_TXT="<span style='color:#eab308'>Sagged earlier</span>"
+    else SUPPLY_TXT="<span style='color:#22c55e'>OK</span>"; fi
+else SUPPLY_TXT="--"; fi
+UPT_TXT=$(awk '{d=int($1/86400); h=int(($1%86400)/3600); m=int(($1%3600)/60); if (d>0) printf "%dd %dh", d, h; else printf "%dh %dm", h, m}' /proc/uptime)
+
+# --- network identity ---------------------------------------------------------------
+SSID=$(iwgetid wlan0 -r 2>/dev/null)
+[ -z "$SSID" ] && SSID=$(wpa_cli -i wlan0 status 2>/dev/null | sed -n 's/^ssid=//p')
+SSID=$(echo "$SSID" | tr -cd 'A-Za-z0-9 _.-')
+[ -z "$SSID" ] && SSID="--"
+ZT_STAT=$(zerotier-cli info 2>/dev/null | awk '{print $3}')
+[ -z "$ZT_STAT" ] && ZT_STAT=$(sudo -n zerotier-cli info 2>/dev/null | awk '{print $3}')
+ZT_SUFFIX=""; [ "$ZT_STAT" = "ONLINE" ] && ZT_SUFFIX=" &middot; ONLINE"
+
 # --- battery.json (monitoring) ---------------------------------------------------
 cat > "$OUT_DIR/battery.json" <<JSON
 {"pct": ${PCT:-null}, "mv": ${MV:-null}, "state": "${STATE_KEY}", "on_battery": ${ON_BATT}, "low": ${LOW}, "ts": "$(date -Iseconds)"}
@@ -181,17 +215,23 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
     <div class="trend">${TREND_BARS}</div>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-top:4px;"><span>24H TREND</span><span>${TREND_TXT}</span></div>
   </div>
+  <div style="border-top:1px solid #1e293b;margin-top:10px;padding-top:10px;">
+    <div class="lbl">RADIO &middot; ${RADIO_MODE}</div>
+    <div style="font-size:15px;margin-top:4px;">${RADIO_TXT}</div>
+  </div>
   <div class="grid">
-    <div class="cell"><div class="k">WI-FI SIGNAL</div><div class="v">${RSSI_TXT}</div></div>
+    <div class="cell"><div class="k">WI-FI SIGNAL</div><div class="v">${RSSI_TXT}</div><div class="unit">${SSID}</div></div>
     <div class="cell"><div class="k">LATENCY</div><div class="v">${LAT_TXT}</div></div>
     <div class="cell"><div class="k">MMDVM</div><div class="v">${SVC_TXT}</div></div>
     <div class="cell"><div class="k">CPU LOAD</div><div class="v">${LOAD_TXT}</div></div>
     <div class="cell"><div class="k">TEMPERATURE</div><div class="v">${TEMP_C}&deg;C <span class="unit">/ ${TEMP_F}&deg;F</span></div></div>
     <div class="cell"><div class="k">STORAGE</div><div class="v">${DISK_PCT}<span class="unit">% full</span></div></div>
+    <div class="cell"><div class="k">SUPPLY</div><div class="v">${SUPPLY_TXT}</div></div>
+    <div class="cell"><div class="k">UPTIME</div><div class="v">${UPT_TXT}</div></div>
   </div>
   <div class="ips">
     <div><span class="k">PUBLIC</span>${PUBLIC_IP}</div>
-    <div><span class="k">ZEROTIER</span>${ZT_IP}</div>
+    <div><span class="k">ZEROTIER</span>${ZT_IP}${ZT_SUFFIX}</div>
     <div><span class="k">LOCAL</span>${IP_ADDR}</div>
   </div>
   <div class="ft"><div style="color:#94a3b8;">pi-star.freeddns.org/battery/</div><div>UPDATED EVERY 5 MIN</div></div>
