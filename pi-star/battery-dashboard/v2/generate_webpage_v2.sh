@@ -77,7 +77,7 @@ MA_TXT="";     is_num "$MA" && MA_TXT=$(printf ' &middot; %+d mA' "$MA")
 
 # --- history + 24h trend ------------------------------------------------------
 NOW=$(date +%s)
-if is_num "$PCT" && is_num "$MV"; then echo "$NOW $PCT $MV" >> "$HISTORY"; fi
+if is_num "$PCT" && is_num "$MV"; then echo "$NOW $PCT $MV $MA $STATE_KEY" >> "$HISTORY"; fi
 [ -f "$HISTORY" ] && tail -n 2016 "$HISTORY" > "$HISTORY.tmp" && mv "$HISTORY.tmp" "$HISTORY"
 TREND_BARS=""; TMIN=""; TMAX=""
 if [ -f "$HISTORY" ]; then
@@ -97,6 +97,20 @@ fi
 [ -z "$TREND_BARS" ] && TREND_BARS="<div style='flex:1;background:#1e293b;height:5%;'></div>"
 TREND_TXT="NO DATA YET"
 is_num "$TMIN" && TREND_TXT="MIN ${TMIN}% &middot; MAX ${TMAX}%"
+
+# --- on-battery session (from the history log) --------------------------------------
+SESSION_HTML=""
+if [ "$ON_BATT" = "true" ] && [ -f "$HISTORY" ]; then
+    SESS=$(awk -v now="$(date +%s)" '
+        ($5=="discharging" || $5=="low") { if (!b) { s=$1; sp=$2; b=1 } }
+        ($5!="discharging" && $5!="low") { b=0 }
+        END { if (b) { d=now-s; printf "%dh %02dm|%d", int(d/3600), int((d%3600)/60), sp } }' "$HISTORY")
+    if [ -n "$SESS" ]; then
+        S_DUR=${SESS%%|*}; S_STARTPCT=${SESS##*|}
+        S_DROP=$((S_STARTPCT - PCT)); [ "$S_DROP" -lt 0 ] && S_DROP=0
+        SESSION_HTML="<div style='border-top:1px solid #1e293b;margin-top:10px;padding-top:10px;'><div class='lbl' style='color:#38bdf8;'>ON BATTERY &middot; ${S_DUR}</div><div style='font-size:13px;color:#94a3b8;margin-top:3px;'>Down ${S_DROP}% this session</div></div>"
+    fi
+fi
 
 # --- system stats ---------------------------------------------------------------
 TEMP_RAW=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
@@ -148,10 +162,26 @@ SSID=$(iwgetid wlan0 -r 2>/dev/null)
 [ -z "$SSID" ] && SSID=$(wpa_cli -i wlan0 status 2>/dev/null | sed -n 's/^ssid=//p')
 SSID=$(echo "$SSID" | tr -cd 'A-Za-z0-9 _.-')
 [ -z "$SSID" ] && SSID="--"
-ZT_STAT=$(sudo -n /usr/sbin/zerotier-cli info 2>/dev/null | awk '{print $3}')
-[ -z "$ZT_STAT" ] && ZT_STAT=$(/usr/sbin/zerotier-cli info 2>/dev/null | awk '{print $3}')
-[ -z "$ZT_STAT" ] && ZT_STAT=$(zerotier-cli info 2>/dev/null | awk '{print $3}')
+ZT_STAT=$(sudo -n /usr/sbin/zerotier-cli info 2>/dev/null | awk '{print $5}')
+[ -z "$ZT_STAT" ] && ZT_STAT=$(/usr/sbin/zerotier-cli info 2>/dev/null | awk '{print $5}')
+[ -z "$ZT_STAT" ] && ZT_STAT=$(zerotier-cli info 2>/dev/null | awk '{print $5}')
 ZT_SUFFIX=""; [ "$ZT_STAT" = "ONLINE" ] && ZT_SUFFIX=" &middot; ONLINE"
+
+# --- memory ----------------------------------------------------------------------
+MEM_PCT=$(free -m | awk 'NR==2 {printf "%d", $3/$2*100}')
+MEM_TOT=$(free -m | awk 'NR==2 {print $2}')
+
+# --- gateway status dots -----------------------------------------------------------
+GW_DOTS=""
+for pair in "DMR:dmrgateway" "YSF:ysfgateway" "P25:p25gateway" "NXDN:nxdngateway"; do
+    lbl=${pair%%:*}; svc=${pair##*:}
+    if systemctl cat "$svc" >/dev/null 2>&1; then
+        if systemctl is-active --quiet "$svc" 2>/dev/null; then dot="#22c55e"; else dot="#ef4444"; fi
+        GW_DOTS="${GW_DOTS}<span style='margin-right:12px;'><span style='color:${dot}'>&#9679;</span> ${lbl}</span>"
+    fi
+done
+GW_STRIP=""
+[ -n "$GW_DOTS" ] && GW_STRIP="<div style='border-top:1px solid #1e293b;margin-top:10px;padding-top:10px;'><div class='lbl'>GATEWAYS</div><div style='font-size:13px;margin-top:5px;'>${GW_DOTS}</div></div>"
 
 # --- battery.json (monitoring) ---------------------------------------------------
 cat > "$OUT_DIR/battery.json" <<JSON
@@ -219,11 +249,11 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
     <div class="gauge"><div style="width:${PCT_TXT}%;"></div></div>
     <div class="trend">${TREND_BARS}</div>
     <div style="display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-top:4px;"><span>24H TREND</span><span>${TREND_TXT}</span></div>
-  </div>
+  </div>${SESSION_HTML}
   <div style="border-top:1px solid #1e293b;margin-top:10px;padding-top:10px;">
     <div class="lbl">RADIO &middot; ${RADIO_MODE}</div>
     <div style="font-size:15px;margin-top:4px;">${RADIO_TXT}</div>${RADIO_SUB}
-  </div>
+  </div>${GW_STRIP}
   <div class="grid">
     <div class="cell"><div class="k">WI-FI SIGNAL</div><div class="v">${RSSI_TXT}</div><div class="unit">${SSID}</div></div>
     <div class="cell"><div class="k">LATENCY</div><div class="v">${LAT_TXT}</div></div>
@@ -233,6 +263,7 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
     <div class="cell"><div class="k">STORAGE</div><div class="v">${DISK_PCT}<span class="unit">% full</span></div></div>
     <div class="cell"><div class="k">SUPPLY</div><div class="v">${SUPPLY_TXT}</div></div>
     <div class="cell"><div class="k">UPTIME</div><div class="v">${UPT_TXT}</div></div>
+    <div class="cell"><div class="k">MEMORY</div><div class="v">${MEM_PCT}<span class="unit">% of ${MEM_TOT} MB</span></div></div>
   </div>
   <div class="ips">
     <div><span class="k">PUBLIC</span>${PUBLIC_IP}</div>
