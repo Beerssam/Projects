@@ -115,7 +115,7 @@ DISK_PCT=$(df -h / | awk 'NR==2 {print $5}' | tr -d '%')
 SYNC_TIME=$(date +"%H:%M")
 
 # --- radio state: last heard from today's MMDVM log ------------------------------
-RADIO_MODE="--"; RADIO_TXT="No activity logged"
+RADIO_MODE="--"; RADIO_TXT="No activity logged"; RADIO_SUB=""
 MLOG=$(ls -t /var/log/pi-star/MMDVM-*.log 2>/dev/null | head -1)
 if [ -n "$MLOG" ]; then
     LH=$(grep -E 'received (RF|network)' "$MLOG" 2>/dev/null | tail -1)
@@ -124,7 +124,11 @@ if [ -n "$MLOG" ]; then
         LCALL=$(echo "$LH" | sed -n 's/.*from \([A-Za-z0-9\/]*\).*/\1/p')
         LTGT=$(echo "$LH" | sed -n 's/.* to \([^,]*\).*/\1/p')
         LTIME=$(echo "$LH" | grep -oE '[0-9]{2}:[0-9]{2}:[0-9]{2}' | head -1 | cut -d: -f1,2)
-        [ -n "$LCALL" ] && RADIO_TXT="${LCALL} &rarr; ${LTGT} &middot; ${LTIME} UTC"
+        if [ -n "$LCALL" ]; then
+            RADIO_TXT="${LCALL} &rarr; ${LTGT}"
+            LT_LOC=$(date -d "$LTIME UTC" +"%H:%M %Z" 2>/dev/null)
+            RADIO_SUB="<div style='font-size:12px;color:#94a3b8;margin-top:3px;'>UTC &middot; ${LTIME}</div><div style='font-size:12px;color:#94a3b8;'>LOCAL &middot; ${LT_LOC}</div>"
+        fi
         [ -z "$RADIO_MODE" ] && RADIO_MODE="--"
     fi
 fi
@@ -144,8 +148,9 @@ SSID=$(iwgetid wlan0 -r 2>/dev/null)
 [ -z "$SSID" ] && SSID=$(wpa_cli -i wlan0 status 2>/dev/null | sed -n 's/^ssid=//p')
 SSID=$(echo "$SSID" | tr -cd 'A-Za-z0-9 _.-')
 [ -z "$SSID" ] && SSID="--"
-ZT_STAT=$(zerotier-cli info 2>/dev/null | awk '{print $3}')
-[ -z "$ZT_STAT" ] && ZT_STAT=$(sudo -n zerotier-cli info 2>/dev/null | awk '{print $3}')
+ZT_STAT=$(sudo -n /usr/sbin/zerotier-cli info 2>/dev/null | awk '{print $3}')
+[ -z "$ZT_STAT" ] && ZT_STAT=$(/usr/sbin/zerotier-cli info 2>/dev/null | awk '{print $3}')
+[ -z "$ZT_STAT" ] && ZT_STAT=$(zerotier-cli info 2>/dev/null | awk '{print $3}')
 ZT_SUFFIX=""; [ "$ZT_STAT" = "ONLINE" ] && ZT_SUFFIX=" &middot; ONLINE"
 
 # --- battery.json (monitoring) ---------------------------------------------------
@@ -217,7 +222,7 @@ cat <<WEB | tee "$OUT_DIR/index.html" > /dev/null
   </div>
   <div style="border-top:1px solid #1e293b;margin-top:10px;padding-top:10px;">
     <div class="lbl">RADIO &middot; ${RADIO_MODE}</div>
-    <div style="font-size:15px;margin-top:4px;">${RADIO_TXT}</div>
+    <div style="font-size:15px;margin-top:4px;">${RADIO_TXT}</div>${RADIO_SUB}
   </div>
   <div class="grid">
     <div class="cell"><div class="k">WI-FI SIGNAL</div><div class="v">${RSSI_TXT}</div><div class="unit">${SSID}</div></div>
